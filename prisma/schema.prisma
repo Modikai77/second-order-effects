@@ -1,0 +1,171 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+enum ImpactDirection {
+  POS
+  NEG
+  MIXED
+  UNCERTAIN
+}
+
+enum ConfidenceLevel {
+  LOW
+  MED
+  HIGH
+}
+
+enum EffectLayer {
+  FIRST
+  SECOND
+  THIRD
+  FOURTH
+}
+
+enum SensitivityLevel {
+  LOW
+  MED
+  HIGH
+}
+
+enum TrackingMode {
+  MANUAL
+}
+
+enum IndicatorStatus {
+  GREEN
+  YELLOW
+  RED
+  UNKNOWN
+}
+
+enum BiasLabel {
+  STRONG_NEG
+  NEG
+  NEUTRAL
+  POS
+  STRONG_POS
+}
+
+model Theme {
+  id            String             @id @default(cuid())
+  statement     String
+  probability   Float
+  horizonMonths Int                @map("horizon_months")
+  createdAt     DateTime           @default(now()) @map("created_at")
+  updatedAt     DateTime           @updatedAt @map("updated_at")
+
+  effects            ThemeEffect[]
+  holdings           Holding[]
+  portfolioMappings  PortfolioMapping[]
+  invalidationItems  InvalidationItem[]
+  runSnapshots       RunSnapshot[]
+
+  @@map("themes")
+}
+
+model ThemeEffect {
+  id              String          @id @default(cuid())
+  themeId         String          @map("theme_id")
+  layer           EffectLayer
+  description     String
+  impactDirection ImpactDirection @map("impact_direction")
+  confidence      ConfidenceLevel
+  orderIndex      Int             @map("order_index")
+
+  theme Theme @relation(fields: [themeId], references: [id], onDelete: Cascade)
+
+  @@map("theme_effects")
+}
+
+model Holding {
+  id           String           @id @default(cuid())
+  themeId      String           @map("theme_id")
+  name         String
+  ticker       String?
+  weight       Float?
+  sensitivity  SensitivityLevel
+  exposureTags Json             @map("exposure_tags")
+
+  theme     Theme             @relation(fields: [themeId], references: [id], onDelete: Cascade)
+  mappings  PortfolioMapping[]
+
+  @@map("holdings")
+}
+
+model PortfolioMapping {
+  id           String          @id @default(cuid())
+  themeId      String          @map("theme_id")
+  holdingId    String          @map("holding_id")
+  exposureType String          @map("exposure_type")
+  netImpact    ImpactDirection @map("net_impact")
+  mechanism    String
+  confidence   ConfidenceLevel
+
+  theme   Theme   @relation(fields: [themeId], references: [id], onDelete: Cascade)
+  holding Holding @relation(fields: [holdingId], references: [id], onDelete: Cascade)
+
+  @@map("portfolio_mappings")
+}
+
+model InvalidationItem {
+  id                  String          @id @default(cuid())
+  themeId             String          @map("theme_id")
+  assumption          String
+  breakpointSignal    String          @map("breakpoint_signal")
+  indicatorName       String          @map("indicator_name")
+  indicatorTrackingMode TrackingMode  @default(MANUAL) @map("indicator_tracking_mode")
+  latestStatus        IndicatorStatus @default(UNKNOWN) @map("latest_status")
+  latestNote          String?         @map("latest_note")
+  updatedAt           DateTime        @updatedAt @map("updated_at")
+
+  theme Theme @relation(fields: [themeId], references: [id], onDelete: Cascade)
+
+  @@map("invalidation_items")
+}
+
+model RunSnapshot {
+  id                String    @id @default(cuid())
+  themeId           String    @map("theme_id")
+  modelName         String    @map("model_name")
+  promptVersion     String    @map("prompt_version")
+  rawOutputJson     Json      @map("raw_output_json")
+  computedBiasScore Float     @map("computed_bias_score")
+  biasLabel         BiasLabel @map("bias_label")
+  createdAt         DateTime  @default(now()) @map("created_at")
+
+  theme Theme @relation(fields: [themeId], references: [id], onDelete: Cascade)
+
+  @@map("run_snapshots")
+}
+
+model PortfolioScenario {
+  id        String            @id @default(cuid())
+  name      String
+  createdAt DateTime          @default(now()) @map("created_at")
+  updatedAt DateTime          @updatedAt @map("updated_at")
+
+  holdings  ScenarioHolding[]
+
+  @@map("portfolio_scenarios")
+}
+
+model ScenarioHolding {
+  id           String           @id @default(cuid())
+  scenarioId   String           @map("scenario_id")
+  name         String
+  ticker       String?
+  weight       Float?
+  sensitivity  SensitivityLevel
+  exposureTags Json             @map("exposure_tags")
+  orderIndex   Int              @map("order_index")
+
+  scenario PortfolioScenario @relation(fields: [scenarioId], references: [id], onDelete: Cascade)
+
+  @@map("scenario_holdings")
+}
