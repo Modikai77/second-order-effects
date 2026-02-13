@@ -52,6 +52,23 @@ enum BiasLabel {
   STRONG_POS
 }
 
+model User {
+  id                String    @id @default(cuid())
+  name              String?
+  email             String    @unique
+  emailVerified     DateTime? @map("email_verified")
+  passwordHash      String    @map("password_hash")
+  createdAt         DateTime  @default(now()) @map("created_at")
+  updatedAt         DateTime  @updatedAt @map("updated_at")
+
+  themes             Theme[]
+  portfolioScenarios PortfolioScenario[]
+  accounts           Account[]
+  sessions           Session[]
+
+  @@map("users")
+}
+
 model Theme {
   id            String             @id @default(cuid())
   statement     String
@@ -59,13 +76,16 @@ model Theme {
   horizonMonths Int                @map("horizon_months")
   createdAt     DateTime           @default(now()) @map("created_at")
   updatedAt     DateTime           @updatedAt @map("updated_at")
+  userId        String?            @map("user_id")
 
   effects            ThemeEffect[]
   holdings           Holding[]
   portfolioMappings  PortfolioMapping[]
   invalidationItems  InvalidationItem[]
   runSnapshots       RunSnapshot[]
+  user               User?              @relation(fields: [userId], references: [id], onDelete: Cascade)
 
+  @@index([userId])
   @@map("themes")
 }
 
@@ -149,9 +169,12 @@ model PortfolioScenario {
   name      String
   createdAt DateTime          @default(now()) @map("created_at")
   updatedAt DateTime          @updatedAt @map("updated_at")
+  userId    String?           @map("user_id")
 
   holdings  ScenarioHolding[]
+  user      User?             @relation(fields: [userId], references: [id], onDelete: Cascade)
 
+  @@index([userId])
   @@map("portfolio_scenarios")
 }
 
@@ -168,4 +191,44 @@ model ScenarioHolding {
   scenario PortfolioScenario @relation(fields: [scenarioId], references: [id], onDelete: Cascade)
 
   @@map("scenario_holdings")
+}
+
+model Account {
+  id                String  @id @default(cuid())
+  userId            String
+  type              String
+  provider          String
+  providerAccountId String  @map("provider_account_id")
+  refreshToken      String? @map("refresh_token")
+  accessToken       String? @map("access_token")
+  expiresAt         Int?    @map("expires_at")
+  tokenType         String? @map("token_type")
+  scope             String?
+  idToken           String? @map("id_token")
+  sessionState      String? @map("session_state")
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([provider, providerAccountId])
+  @@map("accounts")
+}
+
+model Session {
+  id           String   @id @default(cuid())
+  sessionToken String   @unique @map("session_token")
+  userId       String   @map("user_id")
+  expires      DateTime
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@map("sessions")
+}
+
+model VerificationToken {
+  identifier String
+  token      String
+  expires    DateTime
+
+  @@id([identifier, token])
+  @@map("verification_tokens")
 }

@@ -1,5 +1,6 @@
 "use client";
 
+import React from "react";
 import { useMemo, useState } from "react";
 import { useEffect } from "react";
 
@@ -705,8 +706,10 @@ export function SecondOrderEngine() {
                 <tr key={`holding-${idx}`}>
                   <td>
                     <input
+                      aria-label={`holding-name-${idx}`}
                       value={holding.name}
                       onChange={(e) => updateHolding(idx, { name: e.target.value })}
+                      placeholder="Holding name"
                     />
                   </td>
                   <td>

@@ -1,14 +1,19 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
+import { requireAuth } from "@/lib/authz";
 
 export async function GET(
   _request: Request,
   { params }: { params: Promise<{ id: string }> }
 ) {
   const { id } = await params;
+  const userId = await requireAuth();
+  if (!userId) {
+    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  }
 
   const theme = await prisma.theme.findUnique({
-    where: { id },
+    where: { id, userId },
     include: {
       effects: { orderBy: [{ layer: "asc" }, { orderIndex: "asc" }] },
       holdings: true,

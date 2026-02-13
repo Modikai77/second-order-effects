@@ -2,6 +2,7 @@ import { render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { describe, expect, it, vi } from "vitest";
 import { SecondOrderEngine } from "@/components/second-order-engine";
+import React from "react";
 
 describe("SecondOrderEngine", () => {
   it("submits and renders tabs/results", async () => {
@@ -99,8 +100,7 @@ describe("SecondOrderEngine", () => {
     render(<SecondOrderEngine />);
 
     await userEvent.type(screen.getByLabelText("Structural shift"), "AI agents reduce costs materially.");
-    const nameInputs = screen.getAllByRole("textbox");
-    await userEvent.type(nameInputs[1], "Infra");
+    await userEvent.type(screen.getByLabelText("holding-name-0"), "Infra");
 
     await userEvent.click(screen.getByRole("button", { name: "Run analysis" }));
 

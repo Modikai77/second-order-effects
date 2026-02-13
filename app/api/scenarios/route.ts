@@ -2,9 +2,16 @@ import { NextResponse } from "next/server";
 import { ZodError } from "zod";
 import { prisma } from "@/lib/prisma";
 import { scenarioCreateInputSchema } from "@/lib/schemas";
+import { requireAuth } from "@/lib/authz";
 
 export async function GET() {
+  const userId = await requireAuth();
+  if (!userId) {
+    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  }
+
   const items = await prisma.portfolioScenario.findMany({
+    where: { userId },
     orderBy: { createdAt: "desc" },
     include: {
       holdings: {
@@ -18,12 +25,18 @@ export async function GET() {
 
 export async function POST(request: Request) {
   try {
+    const userId = await requireAuth();
+    if (!userId) {
+      return NextResponse.json({ ok: false, error: "Unauthorized" }, { status: 401 });
+    }
+
     const body = scenarioCreateInputSchema.parse(await request.json());
 
     const created = await prisma.$transaction(async (tx) => {
       const scenario = await tx.portfolioScenario.create({
         data: {
-          name: body.name
+          name: body.name,
+          userId
         }
       });
 

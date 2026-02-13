@@ -71,6 +71,18 @@ export const analysisModelOutputSchema = z.object({
   )
 });
 
+export const registerInputSchema = z
+  .object({
+    name: z.string().min(1).max(120).optional(),
+    email: z.string().email().toLowerCase(),
+    password: z.string().min(8),
+    confirmPassword: z.string().min(8)
+  })
+  .refine((value) => value.password === value.confirmPassword, {
+    message: "Passwords do not match.",
+    path: ["confirmPassword"]
+  });
+
 export type AnalyzeInput = z.infer<typeof analyzeInputSchema>;
 export type AnalysisModelOutput = z.infer<typeof analysisModelOutputSchema>;
 

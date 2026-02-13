@@ -38,7 +38,7 @@ async function getValidatedOutput(input: AnalyzeInput) {
   throw lastError instanceof Error ? lastError : new Error("Analysis generation failed.");
 }
 
-export async function analyzeAndPersist(rawInput: unknown) {
+export async function analyzeAndPersist(rawInput: unknown, userId: string | undefined) {
   const input = analyzeInputSchema.parse(rawInput);
 
   try {
@@ -50,7 +50,8 @@ export async function analyzeAndPersist(rawInput: unknown) {
         data: {
           statement: input.statement,
           probability: input.probability,
-          horizonMonths: input.horizonMonths
+          horizonMonths: input.horizonMonths,
+          userId
         }
       });
 
@@ -151,7 +152,8 @@ export async function analyzeAndPersist(rawInput: unknown) {
       data: {
         statement: input.statement,
         probability: input.probability,
-        horizonMonths: input.horizonMonths
+        horizonMonths: input.horizonMonths,
+        userId
       }
     });
 

@@ -1,11 +1,17 @@
 import { NextResponse } from "next/server";
 import { ZodError } from "zod";
 import { analyzeAndPersist } from "@/lib/analysis-service";
+import { requireAuth } from "@/lib/authz";
 
 export async function POST(request: Request) {
   try {
+    const userId = await requireAuth();
+    if (!userId) {
+      return NextResponse.json({ ok: false, error: "Unauthorized" }, { status: 401 });
+    }
+
     const body = await request.json();
-    const result = await analyzeAndPersist(body);
+    const result = await analyzeAndPersist(body, userId);
 
     if (!result.ok) {
       return NextResponse.json(

@@ -1,8 +1,29 @@
 import { describe, expect, it, vi, beforeEach } from "vitest";
 
-const runStructuredAnalysis = vi.fn();
-const themeCreate = vi.fn();
-const runSnapshotCreate = vi.fn();
+const { runStructuredAnalysis } = vi.hoisted(() => ({ runStructuredAnalysis: vi.fn() }));
+
+const {
+  themeCreate,
+  runSnapshotCreate,
+  txThemeCreate,
+  txHoldingCreate,
+  txCreateMany,
+  txPortfolioMappingCreateMany,
+  txInvalidationCreate,
+  txRunSnapshotCreate
+} = vi.hoisted(() => ({
+  themeCreate: vi.fn(),
+  runSnapshotCreate: vi.fn(),
+  txThemeCreate: vi.fn(),
+  txHoldingCreate: vi
+    .fn()
+    .mockResolvedValueOnce({ id: "h1", name: "Infra Fund" })
+    .mockResolvedValueOnce({ id: "h2", name: "SaaS Fund" }),
+  txCreateMany: vi.fn(),
+  txPortfolioMappingCreateMany: vi.fn(),
+  txInvalidationCreate: vi.fn(),
+  txRunSnapshotCreate: vi.fn()
+}));
 
 vi.mock("@/lib/openai", () => ({
   runStructuredAnalysis
@@ -12,17 +33,12 @@ vi.mock("@/lib/prisma", () => ({
   prisma: {
     $transaction: vi.fn(async (callback) =>
       callback({
-        theme: { create: themeCreate },
-        themeEffect: { createMany: vi.fn() },
-        holding: {
-          create: vi
-            .fn()
-            .mockResolvedValueOnce({ id: "h1", name: "Infra Fund" })
-            .mockResolvedValueOnce({ id: "h2", name: "SaaS Fund" })
-        },
-        portfolioMapping: { createMany: vi.fn() },
-        invalidationItem: { create: vi.fn() },
-        runSnapshot: { create: runSnapshotCreate }
+        theme: { create: txThemeCreate },
+        themeEffect: { createMany: txCreateMany },
+        holding: { create: txHoldingCreate },
+        portfolioMapping: { createMany: txPortfolioMappingCreateMany },
+        invalidationItem: { create: txInvalidationCreate },
+        runSnapshot: { create: txRunSnapshotCreate }
       })
     ),
     theme: { create: themeCreate },
@@ -79,7 +95,9 @@ describe("analyzeAndPersist", () => {
   beforeEach(() => {
     vi.clearAllMocks();
     themeCreate.mockResolvedValue({ id: "theme-1" });
+    txThemeCreate.mockResolvedValue({ id: "theme-1" });
     runSnapshotCreate.mockResolvedValue({ id: "snap-1" });
+    txRunSnapshotCreate.mockResolvedValue({ id: "snap-1" });
   });
 
   it("retries once when first model call fails", async () => {
@@ -92,7 +110,7 @@ describe("analyzeAndPersist", () => {
         raw: { output_text: "{}" }
       });
 
-    const result = await analyzeAndPersist(validInput);
+    const result = await analyzeAndPersist(validInput, "user-1");
 
     expect(result.ok).toBe(true);
     expect(runStructuredAnalysis).toHaveBeenCalledTimes(2);
@@ -103,7 +121,7 @@ describe("analyzeAndPersist", () => {
       .mockRejectedValueOnce(new Error("schema fail"))
       .mockRejectedValueOnce(new Error("schema fail again"));
 
-    const result = await analyzeAndPersist(validInput);
+    const result = await analyzeAndPersist(validInput, "user-1");
 
     expect(result.ok).toBe(false);
     expect(runStructuredAnalysis).toHaveBeenCalledTimes(2);

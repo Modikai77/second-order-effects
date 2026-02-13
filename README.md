@@ -23,14 +23,28 @@ Single-user local MVP for structured causal analysis and portfolio stress-testin
    npm run prisma:migrate
    npm run prisma:generate
    ```
+   If migration state is inconsistent (common on upgraded local DBs), run:
+   ```bash
+   npx prisma migrate reset
+   ```
+   to rebuild the local SQLite database from migration history.
 4. Optional seed:
    ```bash
    npm run prisma:seed
    ```
-5. Start app:
+5. Optional bootstrap legacy data ownership (when upgrading from single-user DB):
+   ```bash
+   npm run tenant:bootstrap
+   ```
+6. Start app:
    ```bash
    npm run dev
    ```
+
+## Multi-User Setup
+- First user session is created via `/auth/register`.
+- Migration adds `User`, `Account`, `Session`, and `VerificationToken` tables and scoped `userId` columns.
+- Legacy rows can be assigned to a local bootstrap user with `npm run tenant:bootstrap`.
 
 ## API
 - `POST /api/themes/analyze`
@@ -40,6 +54,13 @@ Single-user local MVP for structured causal analysis and portfolio stress-testin
 - `GET /api/scenarios`
 - `POST /api/scenarios`
 - `GET /api/scenarios/:id`
+- `POST /api/auth/register` (public)
+- NextAuth session endpoints at `/api/auth/*`
+
+## Authentication
+- Login: `/auth/login`
+- Register: `/auth/register`
+- All theme/scenario/invalidation routes are user-scoped and require authentication.
 
 ## Notes
 - On model schema failure after one retry, a neutral error snapshot is persisted.
