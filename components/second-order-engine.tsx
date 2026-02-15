@@ -361,6 +361,7 @@ export function SecondOrderEngine() {
   const [result, setResult] = useState<AnalysisResponse | null>(null);
   const [indicators, setIndicators] = useState<IndicatorItem[]>([]);
   const [history, setHistory] = useState<ThemeListItem[]>([]);
+  const [runTabs, setRunTabs] = useState<"recent" | "previous">("recent");
   const [scenarios, setScenarios] = useState<ScenarioRecord[]>([]);
   const [scenarioName, setScenarioName] = useState("Current Portfolio");
   const [scenarioFile, setScenarioFile] = useState<File | null>(null);
@@ -618,23 +619,41 @@ export function SecondOrderEngine() {
           <p className="muted">No prior runs yet.</p>
         ) : (
           <div className="grid" style={{ gap: 8 }}>
-            {history.map((item) => (
-              <button
-                key={item.id}
-                className={`run-card ${biasToneClass(item.runSnapshots[0]?.biasLabel ?? "NEUTRAL")}`}
-                type="button"
-                onClick={() => loadTheme(item.id)}
-                style={{ textAlign: "left" }}
-              >
-                <strong>{item.statement}</strong>
-                <div className="muted" style={{ fontSize: 12 }}>
-                  {new Date(item.createdAt).toLocaleString()} |{" "}
-                  <span className={`badge ${biasToneClass(item.runSnapshots[0]?.biasLabel ?? "NEUTRAL")}`}>
-                    {item.runSnapshots[0]?.biasLabel ?? "NEUTRAL"}
-                  </span>
-                </div>
+            <div style={{ display: "flex", gap: 8 }}>
+              <button type="button" className={runTabs === "recent" ? "" : "secondary"} onClick={() => setRunTabs("recent")}>
+                Recent (3)
               </button>
-            ))}
+              <button
+                type="button"
+                className={runTabs === "previous" ? "" : "secondary"}
+                onClick={() => setRunTabs("previous")}
+              >
+                Previous
+              </button>
+            </div>
+            {(runTabs === "recent" ? history.slice(0, 3) : history.slice(3)).length === 0 ? (
+              <p className="muted">
+                {runTabs === "recent" ? "No recent runs available." : "No previous runs available."}
+              </p>
+            ) : (
+              (runTabs === "recent" ? history.slice(0, 3) : history.slice(3)).map((item) => (
+                <button
+                  key={item.id}
+                  className={`run-card ${biasToneClass(item.runSnapshots[0]?.biasLabel ?? "NEUTRAL")}`}
+                  type="button"
+                  onClick={() => loadTheme(item.id)}
+                  style={{ textAlign: "left" }}
+                >
+                  <strong>{item.statement}</strong>
+                  <div className="muted" style={{ fontSize: 12 }}>
+                    {new Date(item.createdAt).toLocaleString()} |{" "}
+                    <span className={`badge ${biasToneClass(item.runSnapshots[0]?.biasLabel ?? "NEUTRAL")}`}>
+                      {item.runSnapshots[0]?.biasLabel ?? "NEUTRAL"}
+                    </span>
+                  </div>
+                </button>
+              ))
+            )}
           </div>
         )}
       </div>
