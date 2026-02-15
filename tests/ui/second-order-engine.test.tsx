@@ -48,6 +48,18 @@ describe("SecondOrderEngine", () => {
                   mechanism: "Capex",
                   confidence: "MED"
                 }
+              ],
+              assetRecommendations: [
+                {
+                  assetName: "AI Infrastructure ETF",
+                  assetCategory: "ETF",
+                  sourceLayer: "THIRD",
+                  direction: "POS",
+                  action: "OVERWEIGHT",
+                  rationale: "Rising AI workloads increase usage.",
+                  confidence: "HIGH",
+                  mechanism: "Higher AI platform demand."
+                }
               ]
             }
           })
@@ -73,6 +85,18 @@ describe("SecondOrderEngine", () => {
                 mechanism: "Capex",
                 confidence: "MED",
                 holding: { name: "Infra" }
+              }
+            ],
+            assetRecommendations: [
+              {
+                assetName: "AI Infrastructure ETF",
+                assetCategory: "ETF",
+                sourceLayer: "THIRD",
+                direction: "POS",
+                action: "OVERWEIGHT",
+                rationale: "Rising AI workloads increase usage.",
+                confidence: "HIGH",
+                mechanism: "Higher AI platform demand."
               }
             ],
             invalidationItems: [
@@ -107,6 +131,9 @@ describe("SecondOrderEngine", () => {
     await waitFor(() => expect(screen.getByTestId("bias-summary")).toBeInTheDocument());
     await userEvent.click(screen.getByRole("button", { name: "Portfolio Impact" }));
     expect(screen.getByTestId("portfolio-tab")).toBeInTheDocument();
+
+    await userEvent.click(screen.getByRole("button", { name: "Causal Map" }));
+    expect(screen.getByText("Higher-Order Asset Recommendations")).toBeInTheDocument();
 
     await userEvent.click(screen.getByRole("button", { name: "Invalidation" }));
     expect(screen.getByTestId("invalidation-tab")).toBeInTheDocument();

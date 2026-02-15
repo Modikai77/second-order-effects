@@ -4,6 +4,7 @@ import {
   analyzeInputSchema,
   dedupeEffects,
   dedupeHoldingMappings,
+  dedupeAssetRecommendations,
   enforceOutputChecks,
   normalizeTextKey,
   type AnalyzeInput,
@@ -31,10 +32,10 @@ async function getValidatedOutput(input: AnalyzeInput) {
           ? undefined
           : `Your previous response failed validation with this error: ${String(
               lastError instanceof Error ? lastError.message : "validation error"
-            )}. Return corrected JSON with at least 2 first-order and 2 second-order effects, each with valid confidence and distinct entries.`;
+            )}. Return corrected JSON with at least 2 first-order and 2 second-order effects, each with valid confidence and distinct entries. If SECOND/THIRD/FOURTH effects are present, include at least one asset recommendation tied to those layers.`;
 
       const result = await runStructuredAnalysis(input, retryHint);
-      const deduped = dedupeHoldingMappings(dedupeEffects(result.output));
+      const deduped = dedupeAssetRecommendations(dedupeHoldingMappings(dedupeEffects(result.output)));
       enforceOutputChecks(deduped, input.holdings);
       return { ...result, output: deduped };
     } catch (error) {
@@ -138,7 +139,10 @@ export async function analyzeAndPersist(rawInput: unknown, userId: string | unde
           themeId: theme.id,
           modelName: analysis.modelName,
           promptVersion: analysis.promptVersion,
-          rawOutputJson: analysis.raw as Prisma.InputJsonValue,
+          rawOutputJson: {
+            output: analysis.output,
+            raw: analysis.raw
+          } as Prisma.InputJsonValue,
           computedBiasScore: bias.portfolioBias,
           biasLabel: bias.biasLabel
         }

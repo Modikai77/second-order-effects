@@ -20,6 +20,8 @@ function buildPrompt(input: AnalyzeInput, retryHint?: string): string {
     "- Provide exactly one mapping per unique holding name (even if the same name appears multiple times).",
     "- Use confidence levels LOW/MED/HIGH.",
     "- Do not omit layers; arrays may be empty for fourth-order only if nothing meaningful.",
+    "- After third/fourth-order reasoning, add specific asset recommendations tied to these effects.",
+    "- Each recommendation should include asset name, direction, action, rationale, and mechanism.",
     "- If you're uncertain, still provide plausible causal effects with confidence MED, not placeholders.",
     ...(retryHint ? ["", retryHint] : []),
     "",
@@ -89,9 +91,42 @@ function responseSchema() {
             },
             required: ["holdingName", "exposureType", "netImpact", "mechanism", "confidence"]
           }
+        },
+        assetRecommendations: {
+          type: "array",
+          maxItems: 12,
+          items: {
+            type: "object",
+            additionalProperties: false,
+            properties: {
+              assetName: { type: "string", minLength: 1, maxLength: 120 },
+              ticker: { type: "string", maxLength: 20 },
+              assetCategory: {
+                type: "string",
+                enum: ["EQUITY", "ETF", "INDEX", "SECTOR", "COMMODITY", "CREDIT", "CURRENCY", "OTHER"]
+              },
+              sourceLayer: { type: "string", enum: ["SECOND", "THIRD", "FOURTH"] },
+              direction: { type: "string", enum: ["POS", "NEG", "MIXED", "UNCERTAIN"] },
+              action: { type: "string", enum: ["OVERWEIGHT", "UNDERWEIGHT", "BUY", "SELL", "HEDGE", "WATCH"] },
+              rationale: { type: "string", minLength: 3, maxLength: 600 },
+              confidence: { type: "string", enum: ["LOW", "MED", "HIGH"] },
+              mechanism: { type: "string", minLength: 5, maxLength: 900 },
+              timeHorizon: { type: "string", maxLength: 120 }
+            },
+            required: [
+              "assetName",
+              "assetCategory",
+              "sourceLayer",
+              "direction",
+              "action",
+              "rationale",
+              "confidence",
+              "mechanism"
+            ]
+          }
         }
       },
-      required: ["effectsByLayer", "assumptions", "leadingIndicators", "holdingMappings"],
+      required: ["effectsByLayer", "assumptions", "leadingIndicators", "holdingMappings", "assetRecommendations"],
       $defs: {
         effects: {
           type: "array",

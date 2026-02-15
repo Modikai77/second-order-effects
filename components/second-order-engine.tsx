@@ -8,6 +8,7 @@ type Sensitivity = "LOW" | "MED" | "HIGH";
 type Impact = "POS" | "NEG" | "MIXED" | "UNCERTAIN";
 type Confidence = "LOW" | "MED" | "HIGH";
 type IndicatorStatus = "GREEN" | "YELLOW" | "RED" | "UNKNOWN";
+type AssetRecommendationDirection = "POS" | "NEG" | "MIXED" | "UNCERTAIN";
 
 type HoldingInput = {
   name: string;
@@ -28,11 +29,29 @@ type AnalysisResponse = {
     contributions: Array<{ holdingName: string; score: number; weight: number }>;
   };
   analysis?: {
-    effectsByLayer: Record<"first" | "second" | "third" | "fourth", Array<{ description: string; impactDirection: Impact; confidence: Confidence }>>;
+    effectsByLayer: Record<
+      "first" | "second" | "third" | "fourth",
+      Array<{ description: string; impactDirection: Impact; confidence: Confidence }>
+    >;
     holdingMappings: Array<{ holdingName: string; exposureType: string; netImpact: Impact; mechanism: string; confidence: Confidence }>;
     assumptions: Array<{ assumption: string; breakpointSignal: string }>;
     leadingIndicators: Array<{ name: string; rationale: string }>;
+    assetRecommendations?: AssetRecommendation[];
   };
+  assetRecommendations?: AssetRecommendation[];
+};
+
+type AssetRecommendation = {
+  assetName: string;
+  ticker?: string;
+  assetCategory: string;
+  sourceLayer: "SECOND" | "THIRD" | "FOURTH";
+  direction: AssetRecommendationDirection;
+  action: "OVERWEIGHT" | "UNDERWEIGHT" | "BUY" | "SELL" | "HEDGE" | "WATCH";
+  rationale: string;
+  confidence: Confidence;
+  mechanism: string;
+  timeHorizon?: string;
 };
 
 type IndicatorItem = {
@@ -65,6 +84,11 @@ type ScenarioRecord = {
 };
 
 const statusOptions: IndicatorStatus[] = ["UNKNOWN", "GREEN", "YELLOW", "RED"];
+const recommendationLayerLabels = {
+  SECOND: "Second",
+  THIRD: "Third",
+  FOURTH: "Fourth"
+} as const;
 
 const emptyHolding = (): HoldingInput => ({
   name: "",
@@ -345,6 +369,13 @@ export function SecondOrderEngine() {
     () => holdings.filter((h) => h.name.trim().length > 0),
     [holdings]
   );
+  const recommendationItems = useMemo(
+    () =>
+      (result?.analysis?.assetRecommendations ?? result?.assetRecommendations ?? []).filter((rec) =>
+        ["SECOND", "THIRD", "FOURTH"].includes(rec.sourceLayer)
+      ),
+    [result]
+  );
 
   const fetchHistory = async () => {
     const res = await fetch("/api/themes?page=1&pageSize=15");
@@ -490,6 +521,7 @@ export function SecondOrderEngine() {
       portfolioMappings: Array<{ exposureType: string; netImpact: Impact; mechanism: string; confidence: Confidence; holding: { name: string } }>;
       invalidationItems: Array<{ id: string; assumption: string; breakpointSignal: string; indicatorName: string; latestStatus: IndicatorStatus; latestNote?: string }>;
       runSnapshots: Array<{ computedBiasScore: number; biasLabel: string }>;
+      assetRecommendations: AssetRecommendation[];
     };
 
     setStatement(json.statement);
@@ -536,8 +568,10 @@ export function SecondOrderEngine() {
           netImpact: m.netImpact,
           mechanism: m.mechanism,
           confidence: m.confidence
-        }))
-      }
+        })),
+        assetRecommendations: json.assetRecommendations
+      },
+      assetRecommendations: json.assetRecommendations
     });
 
     setIndicators(
@@ -824,6 +858,49 @@ export function SecondOrderEngine() {
                   </ul>
                 </div>
               ))}
+
+              <div>
+                <h3>Higher-Order Asset Recommendations</h3>
+                {recommendationItems.length === 0 ? (
+                  <p className="muted">No asset recommendations returned for this theme.</p>
+                ) : (
+                  <div className="grid" style={{ gap: 14 }}>
+                    {(["SECOND", "THIRD", "FOURTH"] as const).map((layer) => {
+                      const layerItems = recommendationItems.filter((item) => item.sourceLayer === layer);
+                      if (layerItems.length === 0) {
+                        return null;
+                      }
+
+                      return (
+                        <div key={layer} className="panel">
+                          <h4>{recommendationLayerLabels[layer]}</h4>
+                          <div className="grid" style={{ gap: 10 }}>
+                            {layerItems.map((item) => (
+                              <div key={`${layer}-${item.assetName}`} className="grid">
+                                <p>
+                                  <strong>{item.assetName}</strong>
+                                  {item.ticker ? ` (${item.ticker})` : ""}
+                                  {" · "}
+                                  {item.action}
+                                  {" · "}
+                                  {item.direction}
+                                  {" · "}
+                                  {item.confidence}
+                                </p>
+                                <p className="muted" style={{ marginTop: -8 }}>
+                                  {item.rationale}
+                                </p>
+                                <p>{item.mechanism}</p>
+                                {item.timeHorizon ? <p className="muted">Horizon: {item.timeHorizon}</p> : null}
+                              </div>
+                            ))}
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
+              </div>
             </div>
           )}
 

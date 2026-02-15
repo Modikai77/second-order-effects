@@ -21,6 +21,7 @@ describe("POST /api/themes/analyze", () => {
       bias: { portfolioBias: 0.3, biasLabel: "POS", contributions: [] },
       analysis: {
         effectsByLayer: { first: [], second: [], third: [], fourth: [] },
+        assetRecommendations: [],
         assumptions: [],
         leadingIndicators: [],
         holdingMappings: []

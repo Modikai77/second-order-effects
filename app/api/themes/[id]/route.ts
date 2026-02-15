@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { requireAuth } from "@/lib/authz";
+import { extractAssetRecommendationsFromSnapshot } from "@/lib/schemas";
 
 export async function GET(
   _request: Request,
@@ -34,5 +35,11 @@ export async function GET(
     return NextResponse.json({ error: "Theme not found" }, { status: 404 });
   }
 
-  return NextResponse.json(theme);
+  const latestSnapshot = theme.runSnapshots[0];
+  const assetRecommendations = extractAssetRecommendationsFromSnapshot(latestSnapshot?.rawOutputJson as unknown);
+
+  return NextResponse.json({
+    ...theme,
+    assetRecommendations
+  });
 }

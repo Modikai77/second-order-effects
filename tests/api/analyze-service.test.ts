@@ -88,6 +88,18 @@ const validOutput = {
       mechanism: "Pressure",
       confidence: "MED"
     }
+  ],
+  assetRecommendations: [
+    {
+      assetName: "AI ETF",
+      assetCategory: "ETF",
+      sourceLayer: "THIRD",
+      direction: "POS",
+      action: "OVERWEIGHT",
+      rationale: "Captures increased AI infra demand.",
+      confidence: "HIGH",
+      mechanism: "AI workload migration increases infra spend"
+    }
   ]
 };
 
@@ -114,6 +126,13 @@ describe("analyzeAndPersist", () => {
 
     expect(result.ok).toBe(true);
     expect(runStructuredAnalysis).toHaveBeenCalledTimes(2);
+    expect(txRunSnapshotCreate).toHaveBeenCalledWith({
+      data: expect.objectContaining({
+        rawOutputJson: expect.objectContaining({
+          output: expect.objectContaining({ assetRecommendations: validOutput.assetRecommendations })
+        })
+      })
+    });
   });
 
   it("returns partial failure payload after retry exhaustion", async () => {

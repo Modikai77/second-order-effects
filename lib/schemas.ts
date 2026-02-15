@@ -4,6 +4,18 @@ export const impactDirectionSchema = z.enum(["POS", "NEG", "MIXED", "UNCERTAIN"]
 export const confidenceLevelSchema = z.enum(["LOW", "MED", "HIGH"]);
 export const sensitivityLevelSchema = z.enum(["LOW", "MED", "HIGH"]);
 export const biasLabelSchema = z.enum(["STRONG_NEG", "NEG", "NEUTRAL", "POS", "STRONG_POS"]);
+export const assetCategorySchema = z.enum([
+  "EQUITY",
+  "ETF",
+  "INDEX",
+  "SECTOR",
+  "COMMODITY",
+  "CREDIT",
+  "CURRENCY",
+  "OTHER"
+]);
+export const recommendationSourceLayerSchema = z.enum(["SECOND", "THIRD", "FOURTH"]);
+export const recommendationActionSchema = z.enum(["OVERWEIGHT", "UNDERWEIGHT", "BUY", "SELL", "HEDGE", "WATCH"]);
 
 export const holdingInputSchema = z.object({
   name: z.string().min(1).max(120),
@@ -41,6 +53,19 @@ const effectSchema = z.object({
   confidence: confidenceLevelSchema
 });
 
+export const assetRecommendationSchema = z.object({
+  assetName: z.string().min(1).max(120),
+  ticker: z.string().max(20).optional(),
+  assetCategory: assetCategorySchema,
+  sourceLayer: recommendationSourceLayerSchema,
+  direction: impactDirectionSchema,
+  action: recommendationActionSchema,
+  rationale: z.string().min(3).max(600),
+  confidence: confidenceLevelSchema,
+  mechanism: z.string().min(5).max(900),
+  timeHorizon: z.string().max(120).optional()
+});
+
 export const analysisModelOutputSchema = z.object({
   effectsByLayer: z.object({
     first: z.array(effectSchema).min(2),
@@ -68,7 +93,8 @@ export const analysisModelOutputSchema = z.object({
       mechanism: z.string().min(5).max(900),
       confidence: confidenceLevelSchema
     })
-  )
+  ),
+  assetRecommendations: z.array(assetRecommendationSchema).max(12).default([])
 });
 
 export const registerInputSchema = z
@@ -85,6 +111,7 @@ export const registerInputSchema = z
 
 export type AnalyzeInput = z.infer<typeof analyzeInputSchema>;
 export type AnalysisModelOutput = z.infer<typeof analysisModelOutputSchema>;
+export type AssetRecommendation = z.infer<typeof assetRecommendationSchema>;
 
 function clampText(value: unknown, max: number): unknown {
   if (typeof value !== "string") {
@@ -114,10 +141,27 @@ export function sanitizeModelOutput(raw: unknown): unknown {
         };
       })
     : obj.holdingMappings;
+  const assetRecommendations = Array.isArray(obj.assetRecommendations)
+    ? obj.assetRecommendations.map((item) => {
+        if (!item || typeof item !== "object") {
+          return item;
+        }
+        const recommendation = item as Record<string, unknown>;
+        return {
+          ...recommendation,
+          assetName: clampText(recommendation.assetName, 120),
+          ticker: clampText(recommendation.ticker, 20),
+          rationale: clampText(recommendation.rationale, 600),
+          mechanism: clampText(recommendation.mechanism, 900),
+          timeHorizon: recommendation.timeHorizon ? clampText(recommendation.timeHorizon, 120) : undefined
+        };
+      })
+    : obj.assetRecommendations;
 
   return {
     ...obj,
-    holdingMappings
+    holdingMappings,
+    assetRecommendations
   };
 }
 
@@ -168,6 +212,21 @@ export function dedupeHoldingMappings(output: AnalysisModelOutput): AnalysisMode
   };
 }
 
+export function dedupeAssetRecommendations(output: AnalysisModelOutput): AnalysisModelOutput {
+  const seen = new Set<string>();
+  return {
+    ...output,
+    assetRecommendations: output.assetRecommendations.filter((item) => {
+      const key = `${normalizeTextKey(item.assetName)}|${item.sourceLayer}|${item.action}`;
+      if (seen.has(key)) {
+        return false;
+      }
+      seen.add(key);
+      return true;
+    })
+  };
+}
+
 export function enforceOutputChecks(output: AnalysisModelOutput, holdings: AnalyzeInput["holdings"]) {
   if (output.effectsByLayer.first.length < 2) {
     throw new Error(
@@ -177,6 +236,17 @@ export function enforceOutputChecks(output: AnalysisModelOutput, holdings: Analy
   if (output.effectsByLayer.second.length < 2) {
     throw new Error(
       `Model output must include at least 2 second-order effects (received ${output.effectsByLayer.second.length}).`
+    );
+  }
+
+  if (
+    (output.effectsByLayer.second.length > 0 ||
+      output.effectsByLayer.third.length > 0 ||
+      output.effectsByLayer.fourth.length > 0) &&
+    output.assetRecommendations.length === 0
+  ) {
+    throw new Error(
+      "Model output must include at least one asset recommendation tied to SECOND/THIRD/FOURTH effects."
     );
   }
 
@@ -193,6 +263,87 @@ export function enforceOutputChecks(output: AnalysisModelOutput, holdings: Analy
       throw new Error(`Expected exactly one mapping for holding: ${sampleName}`);
     }
   }
+}
+
+function getRecommendationsFromPayload(output: unknown): AssetRecommendation[] {
+  if (!output || typeof output !== "object") {
+    return [];
+  }
+
+  const asRecord = output as Record<string, unknown>;
+  let recommendations: unknown;
+  if (Array.isArray(asRecord.assetRecommendations)) {
+    recommendations = asRecord.assetRecommendations;
+  } else if (asRecord.output && typeof asRecord.output === "object" && !Array.isArray(asRecord.output)) {
+    const nested = asRecord.output as Record<string, unknown>;
+    if (Array.isArray(nested.assetRecommendations)) {
+      recommendations = nested.assetRecommendations;
+    }
+  }
+
+  if (Array.isArray(recommendations)) {
+    return recommendations.filter((item) => {
+      if (!item || typeof item !== "object") {
+        return false;
+      }
+      const rec = item as Record<string, unknown>;
+      return typeof rec.assetName === "string" && rec.assetName.trim().length > 0;
+    }) as AssetRecommendation[];
+  }
+
+  return [];
+}
+
+export function extractAssetRecommendationsFromSnapshot(rawOutputJson: unknown): AssetRecommendation[] {
+  const fromCurrentShape = getRecommendationsFromPayload(rawOutputJson);
+  if (fromCurrentShape.length > 0) {
+    return fromCurrentShape;
+  }
+
+  if (
+    rawOutputJson &&
+    typeof rawOutputJson === "object" &&
+    "output_text" in rawOutputJson &&
+    typeof (rawOutputJson as { output_text?: unknown }).output_text === "string"
+  ) {
+    try {
+      const parsed = JSON.parse((rawOutputJson as { output_text: string }).output_text);
+      const parsedList = getRecommendationsFromPayload(parsed);
+      if (parsedList.length > 0) {
+        return parsedList;
+      }
+    } catch {
+      return [];
+    }
+  }
+
+  if (
+    rawOutputJson &&
+    typeof rawOutputJson === "object" &&
+    "output" in rawOutputJson &&
+    Array.isArray((rawOutputJson as { output?: unknown }).output)
+  ) {
+    const output = (rawOutputJson as { output: Array<{ content?: unknown }> }).output;
+    for (const block of output) {
+      if (block && typeof block === "object" && Array.isArray(block.content)) {
+        for (const item of block.content) {
+          if (item && typeof item === "object" && "text" in item && typeof item.text === "string") {
+            try {
+              const parsed = JSON.parse(item.text);
+              const parsedList = getRecommendationsFromPayload(parsed);
+              if (parsedList.length > 0) {
+                return parsedList;
+              }
+            } catch {
+              continue;
+            }
+          }
+        }
+      }
+    }
+  }
+
+  return [];
 }
 
 export const indicatorPatchSchema = z.object({

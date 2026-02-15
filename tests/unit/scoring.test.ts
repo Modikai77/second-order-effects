@@ -49,6 +49,7 @@ describe("computePortfolioBias", () => {
       },
       {
         effectsByLayer: { first: [], second: [], third: [], fourth: [] },
+        assetRecommendations: [],
         assumptions: [],
         leadingIndicators: [],
         holdingMappings: [
