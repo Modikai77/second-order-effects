@@ -353,7 +353,7 @@ export function SecondOrderEngine() {
   const [statement, setStatement] = useState("");
   const [probabilityPct, setProbabilityPct] = useState(40);
   const [horizonMonths, setHorizonMonths] = useState(36);
-  const [selectedModel, setSelectedModel] = useState(availableModels[0]);
+  const [selectedModel, setSelectedModel] = useState("gpt-5.2");
   const [holdings, setHoldings] = useState<HoldingInput[]>([emptyHolding()]);
   const [activeTab, setActiveTab] = useState<"causal" | "portfolio" | "invalidation">("causal");
   const [loading, setLoading] = useState(false);
