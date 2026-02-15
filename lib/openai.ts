@@ -189,7 +189,9 @@ export async function runStructuredAnalysis(
   });
 
   if (!res.ok) {
-    throw new Error(`OpenAI request failed (${res.status})`);
+    const errText = await res.text(); // IMPORTANT: captures OpenAI’s real error message
+    console.error("OpenAI error", res.status, errText);
+    throw new Error(`OpenAI request failed (${res.status}): ${errText}`);
   }
 
   const raw = (await res.json()) as {
