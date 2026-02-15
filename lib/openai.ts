@@ -3,7 +3,7 @@ import { analysisModelOutputSchema, sanitizeModelOutput } from "@/lib/schemas";
 
 const PROMPT_VERSION = "v1";
 
-function buildPrompt(input: AnalyzeInput): string {
+function buildPrompt(input: AnalyzeInput, retryHint?: string): string {
   const holdingsText = input.holdings
     .map((h) => `- ${h.name} (${h.ticker ?? "N/A"}), sensitivity=${h.sensitivity}, tags=${h.exposureTags.join(", ") || "none"}`)
     .join("\n");
@@ -15,9 +15,13 @@ function buildPrompt(input: AnalyzeInput): string {
     "- Be specific and mechanism-driven.",
     "- Keep exposureType concise (<= 220 chars) and mechanism concise (<= 900 chars).",
     "- Avoid repeating the same idea across layers.",
+    "- Return at least 2 first-order and 2 second-order effects.",
     "- Keep a coherent first->second->third->fourth order chain.",
     "- Provide exactly one mapping per unique holding name (even if the same name appears multiple times).",
     "- Use confidence levels LOW/MED/HIGH.",
+    "- Do not omit layers; arrays may be empty for fourth-order only if nothing meaningful.",
+    "- If you're uncertain, still provide plausible causal effects with confidence MED, not placeholders.",
+    ...(retryHint ? ["", retryHint] : []),
     "",
     `Structural shift: ${input.statement}`,
     `Probability: ${input.probability}`,
@@ -113,7 +117,10 @@ function responseSchema() {
   };
 }
 
-export async function runStructuredAnalysis(input: AnalyzeInput): Promise<{
+export async function runStructuredAnalysis(
+  input: AnalyzeInput,
+  retryHint?: string
+): Promise<{
   modelName: string;
   promptVersion: string;
   output: AnalysisModelOutput;
@@ -127,7 +134,7 @@ export async function runStructuredAnalysis(input: AnalyzeInput): Promise<{
   const modelName = process.env.OPENAI_MODEL ?? "gpt-4.1";
   const payload = {
     model: modelName,
-    input: buildPrompt(input),
+    input: buildPrompt(input, retryHint),
     text: {
       format: {
         type: "json_schema",

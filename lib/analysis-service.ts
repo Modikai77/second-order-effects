@@ -26,7 +26,14 @@ async function getValidatedOutput(input: AnalyzeInput) {
 
   for (let attempt = 0; attempt < 2; attempt += 1) {
     try {
-      const result = await runStructuredAnalysis(input);
+      const retryHint =
+        attempt === 0
+          ? undefined
+          : `Your previous response failed validation with this error: ${String(
+              lastError instanceof Error ? lastError.message : "validation error"
+            )}. Return corrected JSON with at least 2 first-order and 2 second-order effects, each with valid confidence and distinct entries.`;
+
+      const result = await runStructuredAnalysis(input, retryHint);
       const deduped = dedupeHoldingMappings(dedupeEffects(result.output));
       enforceOutputChecks(deduped, input.holdings);
       return { ...result, output: deduped };

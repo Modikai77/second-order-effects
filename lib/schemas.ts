@@ -43,8 +43,8 @@ const effectSchema = z.object({
 
 export const analysisModelOutputSchema = z.object({
   effectsByLayer: z.object({
-    first: z.array(effectSchema),
-    second: z.array(effectSchema),
+    first: z.array(effectSchema).min(2),
+    second: z.array(effectSchema).min(2),
     third: z.array(effectSchema),
     fourth: z.array(effectSchema)
   }),
@@ -170,10 +170,14 @@ export function dedupeHoldingMappings(output: AnalysisModelOutput): AnalysisMode
 
 export function enforceOutputChecks(output: AnalysisModelOutput, holdings: AnalyzeInput["holdings"]) {
   if (output.effectsByLayer.first.length < 2) {
-    throw new Error("Model output must include at least 2 first-order effects.");
+    throw new Error(
+      `Model output must include at least 2 first-order effects (received ${output.effectsByLayer.first.length}).`
+    );
   }
   if (output.effectsByLayer.second.length < 2) {
-    throw new Error("Model output must include at least 2 second-order effects.");
+    throw new Error(
+      `Model output must include at least 2 second-order effects (received ${output.effectsByLayer.second.length}).`
+    );
   }
 
   const byHolding = new Map<string, number>();
