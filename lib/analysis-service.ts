@@ -171,7 +171,7 @@ export async function analyzeAndPersist(rawInput: unknown, userId: string | unde
     await prisma.runSnapshot.create({
       data: {
         themeId: theme.id,
-        modelName: process.env.OPENAI_MODEL ?? "gpt-4.1",
+        modelName: input.modelName ?? process.env.OPENAI_MODEL ?? "gpt-4.1",
         promptVersion: "v1",
         rawOutputJson: { error: errMessage } as Prisma.InputJsonValue,
         computedBiasScore: 0,

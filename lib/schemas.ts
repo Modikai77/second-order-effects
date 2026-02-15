@@ -39,6 +39,7 @@ export const analyzeInputSchema = z.object({
   statement: z.string().min(10).max(500),
   probability: z.number().min(0).max(1),
   horizonMonths: z.number().int().min(1).max(120),
+  modelName: z.string().min(1).max(80).optional(),
   holdings: z.array(holdingInputSchema).min(1).max(100)
 });
 

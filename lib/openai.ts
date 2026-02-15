@@ -168,7 +168,7 @@ export async function runStructuredAnalysis(
     throw new Error("OPENAI_API_KEY is missing.");
   }
 
-  const modelName = process.env.OPENAI_MODEL ?? "gpt-4.1";
+  const modelName = input.modelName?.trim() || process.env.OPENAI_MODEL || "gpt-4.1";
   const payload = {
     model: modelName,
     input: buildPrompt(input, retryHint),

@@ -89,6 +89,7 @@ const recommendationLayerLabels = {
   THIRD: "Third",
   FOURTH: "Fourth"
 } as const;
+const availableModels = ["gpt-4.1", "gpt-4.1-mini", "gpt-4o", "gpt-4o-mini"];
 
 const emptyHolding = (): HoldingInput => ({
   name: "",
@@ -352,6 +353,7 @@ export function SecondOrderEngine() {
   const [statement, setStatement] = useState("");
   const [probabilityPct, setProbabilityPct] = useState(40);
   const [horizonMonths, setHorizonMonths] = useState(36);
+  const [selectedModel, setSelectedModel] = useState(availableModels[0]);
   const [holdings, setHoldings] = useState<HoldingInput[]>([emptyHolding()]);
   const [activeTab, setActiveTab] = useState<"causal" | "portfolio" | "invalidation">("causal");
   const [loading, setLoading] = useState(false);
@@ -466,10 +468,11 @@ export function SecondOrderEngine() {
     setLoading(true);
 
     try {
-      const payload = {
+        const payload = {
         statement,
         probability: probabilityPct / 100,
         horizonMonths,
+        modelName: selectedModel,
         holdings: validHoldings.map((h) => ({
           ...h,
           weight: Number.isFinite(h.weight) ? toDecimalWeight(h.weight) : undefined,
@@ -699,6 +702,16 @@ export function SecondOrderEngine() {
         </div>
 
         <div className="grid grid-2">
+          <div className="grid" style={{ gap: 6 }}>
+            <label htmlFor="model">OpenAI model</label>
+            <select id="model" value={selectedModel} onChange={(e) => setSelectedModel(e.target.value)}>
+              {availableModels.map((model) => (
+                <option key={model} value={model}>
+                  {model}
+                </option>
+              ))}
+            </select>
+          </div>
           <div className="grid" style={{ gap: 6 }}>
             <label htmlFor="probability">Probability ({probabilityPct}%)</label>
             <input
