@@ -89,7 +89,7 @@ const recommendationLayerLabels = {
   THIRD: "Third",
   FOURTH: "Fourth"
 } as const;
-const availableModels = ["gpt-4.1", "gpt-4.1-mini", "gpt-4o", "gpt-4o-mini"];
+const availableModels = ["gpt-4.1", "gpt-4.1-mini", "gpt-4o", "gpt-4o-mini", "gpt-5.2"];
 
 const emptyHolding = (): HoldingInput => ({
   name: "",
