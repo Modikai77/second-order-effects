@@ -21,7 +21,7 @@ function buildPrompt(input: AnalyzeInput, retryHint?: string): string {
     "- Use confidence levels LOW/MED/HIGH.",
     "- Do not omit layers; arrays may be empty for fourth-order only if nothing meaningful.",
     "- After third/fourth-order reasoning, add specific asset recommendations tied to these effects.",
-    "- Each recommendation should include asset name, action, direction, rationale, mechanism, and ticker (use empty string if unknown).",
+    "- Each recommendation should include asset name, action, direction, rationale, mechanism, ticker, and timeHorizon (use empty string if unknown).",
     "- If you're uncertain, still provide plausible causal effects with confidence MED, not placeholders.",
     ...(retryHint ? ["", retryHint] : []),
     "",
@@ -122,7 +122,8 @@ function responseSchema() {
               "action",
               "rationale",
               "confidence",
-              "mechanism"
+              "mechanism",
+              "timeHorizon"
             ]
           }
         }
