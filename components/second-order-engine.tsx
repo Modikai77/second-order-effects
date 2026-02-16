@@ -1005,7 +1005,7 @@ export function SecondOrderEngine() {
                       void clearScenarioRow(scenario.id);
                     }}
                   >
-                    Clear
+                    Delete
                   </button>
                 )}
               </div>
