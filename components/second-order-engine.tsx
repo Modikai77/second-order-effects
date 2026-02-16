@@ -920,6 +920,11 @@ export function SecondOrderEngine() {
                   onClick={() => loadScenario(scenario)}
                 >
                   <strong>{scenario.name}</strong>
+                  {loadedScenarioId === scenario.id ? (
+                    <span className="badge tone-neutral" style={{ marginLeft: 8 }}>
+                      Loaded
+                    </span>
+                  ) : null}
                   <div className="muted" style={{ fontSize: 12 }}>
                     {scenario.holdings.length} holdings | {new Date(scenario.createdAt).toLocaleString()}
                   </div>
