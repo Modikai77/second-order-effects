@@ -172,6 +172,53 @@ function toDecimalWeight(weight?: number): number | undefined {
   return weight;
 }
 
+function normalizeWeightScale(weights: Array<number | undefined>): Array<number | undefined> {
+  const finite = weights.filter((weight): weight is number => typeof weight === "number" && Number.isFinite(weight));
+  if (finite.length === 0) {
+    return weights;
+  }
+
+  const maxWeight = Math.max(...finite);
+  const weightSum = finite.reduce((sum, weight) => sum + weight, 0);
+  const allNonNegative = finite.every((weight) => weight >= 0);
+  const shouldDetectLegacyScale = allNonNegative && maxWeight <= 1 && weightSum > 2 && finite.length >= 2;
+
+  if (shouldDetectLegacyScale) {
+    const scaledByLegacy = weights.map((weight) => {
+      if (typeof weight !== "number" || !Number.isFinite(weight)) {
+        return weight;
+      }
+
+      const text = weight.toString();
+      const decimalPlaces = text.includes(".") ? text.split(".")[1]?.length ?? 0 : 0;
+      if (weight < 0.7 && decimalPlaces <= 2) {
+        return weight / 100;
+      }
+      return weight;
+    });
+
+    const scaledSum = scaledByLegacy.reduce((sum, value) => sum + (typeof value === "number" ? value : 0), 0);
+    if (scaledSum >= 0.9 && scaledSum <= 1.1) {
+      return scaledByLegacy;
+    }
+  }
+
+  return weights.map((weight) => {
+    if (typeof weight !== "number" || !Number.isFinite(weight)) {
+      return weight;
+    }
+    return toDecimalWeight(weight);
+  });
+}
+
+function normalizeHoldingWeights(holdings: HoldingInput[]): HoldingInput[] {
+  const normalizedWeights = normalizeWeightScale(holdings.map((h) => h.weight));
+  return holdings.map((holding, index) => ({
+    ...holding,
+    weight: normalizedWeights[index]
+  }));
+}
+
 function normalizeLoadedWeights(weights: Array<number | null | undefined>): Array<number | undefined> {
   const normalized: Array<number | undefined> = weights.map((weight) => {
     if (typeof weight !== "number" || !Number.isFinite(weight)) {
@@ -665,14 +712,15 @@ export function SecondOrderEngine() {
     try {
       const text = await scenarioFile.text();
       const parsedHoldings = parsePortfolioCsv(text);
+      const normalizedHoldings = normalizeHoldingWeights(parsedHoldings);
       const res = await fetch("/api/scenarios", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           name: scenarioName.trim(),
-          holdings: parsedHoldings.map((holding) => ({
+          holdings: normalizedHoldings.map((holding) => ({
             ...holding,
-            weight: toDecimalWeight(holding.weight)
+            weight: holding.weight
           }))
         })
       });
@@ -713,9 +761,8 @@ export function SecondOrderEngine() {
           name,
           probability: Math.max(0, branchOverrides[name] / 100)
         })),
-        holdings: validHoldings.map((h) => ({
+        holdings: normalizeHoldingWeights(validHoldings).map((h) => ({
           ...h,
-          weight: Number.isFinite(h.weight) ? toDecimalWeight(h.weight) : undefined,
           exposureTags: h.exposureTags
         }))
       };

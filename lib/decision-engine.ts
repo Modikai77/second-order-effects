@@ -74,6 +74,66 @@ export function normalizeBranchProbabilities(
   return merged.map((branch) => ({ ...branch, probability: branch.probability / total }));
 }
 
+export function normalizeHoldingWeights(
+  holdings: AnalyzeInput["holdings"]
+): AnalyzeInput["holdings"] {
+  const prepared = holdings.map((holding) => ({ ...holding }));
+  const finiteWeights = prepared
+    .map((holding) => holding.weight)
+    .filter((weight): weight is number => typeof weight === "number" && Number.isFinite(weight));
+  if (finiteWeights.length === 0) {
+    return prepared;
+  }
+
+  const maxWeight = Math.max(...finiteWeights);
+  const weightSum = finiteWeights.reduce((sum, value) => sum + value, 0);
+  const allNonNegative = finiteWeights.every((weight) => weight >= 0);
+  const shouldDetectLegacyScale =
+    allNonNegative && maxWeight <= 1 && weightSum > 2 && finiteWeights.length >= 2;
+
+  if (shouldDetectLegacyScale) {
+    const scaledByLegacy = prepared.map((holding) => {
+      if (typeof holding.weight !== "number" || !Number.isFinite(holding.weight)) {
+        return holding.weight;
+      }
+
+      const text = holding.weight.toString();
+      const decimalPlaces = text.includes(".") ? text.split(".")[1]?.length ?? 0 : 0;
+      if (holding.weight < 0.7 && decimalPlaces <= 2) {
+        return holding.weight / 100;
+      }
+      return holding.weight;
+    });
+
+    const scaledSum = scaledByLegacy.reduce(
+      (sum, value) => sum + (typeof value === "number" ? value : 0),
+      0
+    );
+    if (scaledSum >= 0.9 && scaledSum <= 1.1) {
+      return scaledByLegacy.map((weight, index) => ({
+        ...prepared[index],
+        weight
+      }));
+    }
+
+    return prepared.map((holding) => ({
+      ...holding,
+      weight:
+        typeof holding.weight === "number" && Number.isFinite(holding.weight) && holding.weight > 1
+          ? holding.weight / 100
+          : holding.weight
+    }));
+  }
+
+  return prepared.map((holding) => ({
+    ...holding,
+    weight:
+      typeof holding.weight === "number" && Number.isFinite(holding.weight) && holding.weight > 1
+        ? holding.weight / 100
+        : holding.weight
+  }));
+}
+
 export function validatePortfolioReality(
   holdings: AnalyzeInput["holdings"],
   allowWeightOverride: boolean

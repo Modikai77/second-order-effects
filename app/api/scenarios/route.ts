@@ -3,6 +3,7 @@ import { ZodError } from "zod";
 import { prisma } from "@/lib/prisma";
 import { scenarioCreateInputSchema } from "@/lib/schemas";
 import { requireAuth } from "@/lib/authz";
+import { normalizeHoldingWeights } from "@/lib/decision-engine";
 
 export async function GET() {
   const userId = await requireAuth();
@@ -32,16 +33,21 @@ export async function POST(request: Request) {
 
     const body = scenarioCreateInputSchema.parse(await request.json());
 
-    const created = await prisma.$transaction(async (tx) => {
-      const scenario = await tx.portfolioScenario.create({
-        data: {
-          name: body.name,
-          userId
-        }
-      });
+      const normalizedHoldings = normalizeHoldingWeights(
+        body.holdings.map((holding) => ({
+          ...holding
+        }))
+      );
+      const created = await prisma.$transaction(async (tx) => {
+        const scenario = await tx.portfolioScenario.create({
+          data: {
+            name: body.name,
+            userId
+          }
+        });
 
-      await tx.scenarioHolding.createMany({
-        data: body.holdings.map((holding, index) => ({
+        await tx.scenarioHolding.createMany({
+        data: normalizedHoldings.map((holding, index) => ({
           scenarioId: scenario.id,
           name: holding.name,
           ticker: holding.ticker,

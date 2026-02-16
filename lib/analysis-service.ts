@@ -17,6 +17,7 @@ import {
   buildExpressionRecommendations,
   buildNodeShocks,
   deriveIndicatorDefinitions,
+  normalizeHoldingWeights,
   normalizeBranchProbabilities,
   validatePortfolioReality
 } from "@/lib/decision-engine";
@@ -56,7 +57,10 @@ async function getValidatedOutput(input: AnalyzeInput) {
 
 export async function analyzeAndPersist(rawInput: unknown, userId: string | undefined) {
   const parsedInput = analyzeInputSchema.parse(rawInput);
-  const input: AnalyzeInput = { ...parsedInput };
+  let input: AnalyzeInput = {
+    ...parsedInput,
+    holdings: normalizeHoldingWeights(parsedInput.holdings)
+  };
 
   try {
     if (input.portfolioScenarioId) {
@@ -67,7 +71,8 @@ export async function analyzeAndPersist(rawInput: unknown, userId: string | unde
       if (!loadedScenario || loadedScenario.userId !== userId) {
         throw new Error("Portfolio scenario not found.");
       }
-      input.holdings = loadedScenario.holdings.map((holding) => ({
+      input.holdings = normalizeHoldingWeights(
+        loadedScenario.holdings.map((holding) => ({
         name: holding.name,
         ticker: holding.ticker ?? undefined,
         weight: holding.weight ?? undefined,
@@ -75,7 +80,8 @@ export async function analyzeAndPersist(rawInput: unknown, userId: string | unde
         constraint: holding.constraint,
         purpose: holding.purpose,
         exposureTags: Array.isArray(holding.exposureTags) ? (holding.exposureTags as string[]) : []
-      }));
+        }))
+      );
     }
 
     const portfolioValidation = validatePortfolioReality(input.holdings, input.allowWeightOverride);
