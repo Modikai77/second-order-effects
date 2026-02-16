@@ -168,12 +168,16 @@ function toPercentWeight(weight?: number | null): number | undefined {
 }
 
 function normalizeToDecimalHoldings<T extends { weight?: number | null }>(holdings: T[]): T[] {
-  const normalizedWeights = normalizeWeightScale(holdings.map((holding) => holding.weight));
+  const normalizedWeights = normalizeWeightScale(
+    holdings.map((holding) => (typeof holding.weight === "number" && Number.isFinite(holding.weight) ? holding.weight : undefined))
+  );
   return holdings.map((holding, index) => ({ ...holding, weight: normalizedWeights[index] }));
 }
 
 function normalizeToPercentWeights(weights: Array<number | null | undefined>): Array<number | undefined> {
-  return normalizeWeightScale(weights.map((weight) => weight)).map((weight) => toPercentWeight(weight));
+  return normalizeWeightScale(
+    weights.map((weight) => (typeof weight === "number" && Number.isFinite(weight) ? weight : undefined))
+  ).map((weight) => toPercentWeight(weight));
 }
 
 function impactToneClass(impact: Impact): string {
