@@ -583,6 +583,8 @@ export function SecondOrderEngine() {
   const clearScenario = () => {
     setHoldings([emptyHolding()]);
     setLoadedScenarioId(null);
+    setScenarioName("Current Portfolio");
+    setScenarioFile(null);
     setScenarioMessage(null);
     setScenarioError(null);
   };
@@ -930,7 +932,15 @@ export function SecondOrderEngine() {
                   </div>
                 </button>
                 {loadedScenarioId === scenario.id && (
-                  <button type="button" className="secondary" onClick={clearScenario}>
+                  <button
+                    type="button"
+                    className="secondary"
+                    onClick={(event) => {
+                      event.preventDefault();
+                      event.stopPropagation();
+                      clearScenario();
+                    }}
+                  >
                     Clear
                   </button>
                 )}
