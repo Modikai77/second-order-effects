@@ -464,6 +464,7 @@ export function SecondOrderEngine() {
   const [scenarioFile, setScenarioFile] = useState<File | null>(null);
   const [scenarioError, setScenarioError] = useState<string | null>(null);
   const [scenarioMessage, setScenarioMessage] = useState<string | null>(null);
+  const [loadedScenarioId, setLoadedScenarioId] = useState<string | null>(null);
   const [universeVersions, setUniverseVersions] = useState<UniverseVersionListItem[]>([]);
   const [selectedUniverseVersionId, setSelectedUniverseVersionId] = useState<string>("");
   const [universeCsvName, setUniverseCsvName] = useState("Default Universe");
@@ -574,7 +575,15 @@ export function SecondOrderEngine() {
         exposureTags: Array.isArray(holding.exposureTags) ? holding.exposureTags : []
       }))
     );
+    setLoadedScenarioId(scenario.id);
     setScenarioMessage(`Loaded scenario: ${scenario.name}`);
+    setScenarioError(null);
+  };
+
+  const clearScenario = () => {
+    setHoldings([emptyHolding()]);
+    setLoadedScenarioId(null);
+    setScenarioMessage(null);
     setScenarioError(null);
   };
 
@@ -899,18 +908,28 @@ export function SecondOrderEngine() {
             <p className="muted">No saved portfolio scenarios yet.</p>
           ) : (
             scenarios.map((scenario) => (
-              <button
+              <div
                 key={scenario.id}
-                type="button"
                 className="secondary"
-                style={{ textAlign: "left" }}
-                onClick={() => loadScenario(scenario)}
+                style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 8, padding: "8px 12px" }}
               >
-                <strong>{scenario.name}</strong>
-                <div className="muted" style={{ fontSize: 12 }}>
-                  {scenario.holdings.length} holdings | {new Date(scenario.createdAt).toLocaleString()}
-                </div>
-              </button>
+                <button
+                  type="button"
+                  className="secondary"
+                  style={{ textAlign: "left", flex: 1 }}
+                  onClick={() => loadScenario(scenario)}
+                >
+                  <strong>{scenario.name}</strong>
+                  <div className="muted" style={{ fontSize: 12 }}>
+                    {scenario.holdings.length} holdings | {new Date(scenario.createdAt).toLocaleString()}
+                  </div>
+                </button>
+                {loadedScenarioId === scenario.id && (
+                  <button type="button" className="secondary" onClick={clearScenario}>
+                    Clear
+                  </button>
+                )}
+              </div>
             ))
           )}
         </div>
