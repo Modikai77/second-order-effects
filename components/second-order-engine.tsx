@@ -580,13 +580,23 @@ export function SecondOrderEngine() {
     setScenarioError(null);
   };
 
-  const clearScenario = () => {
+  const clearScenarioEditor = () => {
     setHoldings([emptyHolding()]);
     setLoadedScenarioId(null);
-    setScenarioName("Current Portfolio");
-    setScenarioFile(null);
     setScenarioMessage(null);
     setScenarioError(null);
+  };
+
+  const clearScenarioRow = () => {
+    setScenarios((current) =>
+      loadedScenarioId ? current.filter((scenario) => scenario.id !== loadedScenarioId) : current
+    );
+    clearScenarioEditor();
+  };
+
+  const clearAllHoldings = () => {
+    setScenarioFile(null);
+    clearScenarioEditor();
   };
 
   const saveScenarioFromCsv = async () => {
@@ -902,6 +912,9 @@ export function SecondOrderEngine() {
           <button type="button" onClick={saveScenarioFromCsv}>
             Save Scenario From CSV
           </button>
+          <button type="button" className="secondary" onClick={clearAllHoldings}>
+            Clear
+          </button>
         </div>
         {scenarioError && <p className="error">{scenarioError}</p>}
         {scenarioMessage && <p className="muted">{scenarioMessage}</p>}
@@ -938,10 +951,10 @@ export function SecondOrderEngine() {
                     onClick={(event) => {
                       event.preventDefault();
                       event.stopPropagation();
-                      clearScenario();
+                      clearScenarioRow();
                     }}
                   >
-                    Clear
+                    Clear Scenario
                   </button>
                 )}
               </div>
