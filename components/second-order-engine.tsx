@@ -172,6 +172,37 @@ function toDecimalWeight(weight?: number): number | undefined {
   return weight;
 }
 
+function normalizeLoadedWeights(weights: Array<number | null | undefined>): Array<number | undefined> {
+  const normalized: Array<number | undefined> = weights.map((weight) => {
+    if (typeof weight !== "number" || !Number.isFinite(weight)) {
+      return undefined;
+    }
+    return Number(weight);
+  });
+  const finite = normalized.filter((weight): weight is number => typeof weight === "number");
+  if (finite.length === 0) {
+    return normalized;
+  }
+
+  const nonNegative = finite.filter((weight) => weight >= 0);
+  if (nonNegative.length !== finite.length) {
+    return finite;
+  }
+
+  const sourceSum = finite.reduce((acc, weight) => acc + weight, 0);
+  const shouldTreatAsPercent = sourceSum > 2 && Math.max(...finite) <= 100;
+  if (!shouldTreatAsPercent) {
+    return finite;
+  }
+
+  return finite.map((weight) => Number((weight / 100).toFixed(6)));
+}
+
+function loadedHoldingWeightsToPercent(weights: Array<number | null | undefined>): Array<number | undefined> {
+  const normalized = normalizeLoadedWeights(weights).map((weight) => toDecimalWeight(weight));
+  return normalized.map((weight) => toPercentWeight(weight));
+}
+
 function impactToneClass(impact: Impact): string {
   if (impact === "POS") return "tone-pos";
   if (impact === "NEG") return "tone-neg";
@@ -564,11 +595,12 @@ export function SecondOrderEngine() {
   };
 
   const loadScenario = (scenario: ScenarioRecord) => {
+    const normalizedWeights = loadedHoldingWeightsToPercent(scenario.holdings.map((holding) => holding.weight));
     setHoldings(
       scenario.holdings.map((holding) => ({
         name: holding.name,
         ticker: holding.ticker ?? "",
-        weight: toPercentWeight(holding.weight),
+        weight: normalizedWeights.shift() ?? toPercentWeight(holding.weight),
         sensitivity: holding.sensitivity,
         constraint: holding.constraint ?? "FREE",
         purpose: holding.purpose ?? "LONG_TERM_GROWTH",
@@ -744,11 +776,12 @@ export function SecondOrderEngine() {
     setStatement(json.statement);
     setProbabilityPct(Math.round(json.probability * 100));
     setHorizonMonths(json.horizonMonths);
+    const normalizedWeights = loadedHoldingWeightsToPercent(json.holdings.map((h) => h.weight));
     setHoldings(
       json.holdings.map((h) => ({
         name: h.name,
         ticker: h.ticker ?? "",
-        weight: toPercentWeight(h.weight),
+        weight: normalizedWeights.shift() ?? toPercentWeight(h.weight),
         sensitivity: h.sensitivity,
         constraint: h.constraint ?? "FREE",
         purpose: h.purpose ?? "LONG_TERM_GROWTH",
