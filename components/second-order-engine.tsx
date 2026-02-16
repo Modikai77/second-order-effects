@@ -619,11 +619,29 @@ export function SecondOrderEngine() {
     setScenarioError(null);
   };
 
-  const clearScenarioRow = () => {
-    setScenarios((current) =>
-      loadedScenarioId ? current.filter((scenario) => scenario.id !== loadedScenarioId) : current
-    );
-    clearScenarioEditor();
+  const clearScenarioRow = async (scenarioId: string) => {
+    setScenarioError(null);
+    setScenarioMessage(null);
+    const previousScenarios = scenarios;
+
+    try {
+      const res = await fetch(`/api/scenarios/${scenarioId}`, {
+        method: "DELETE"
+      });
+      if (!res.ok) {
+        const json = (await res.json().catch(() => ({}))) as { error?: unknown };
+        throw new Error(formatApiError(json.error, `Failed to delete scenario (${res.status})`));
+      }
+
+      setScenarios((current) => current.filter((scenario) => scenario.id !== scenarioId));
+      if (loadedScenarioId === scenarioId) {
+        clearScenarioEditor();
+      }
+      setScenarioMessage("Scenario deleted.");
+    } catch (error) {
+      setScenarios(previousScenarios);
+      setScenarioError(error instanceof Error ? error.message : "Could not delete scenario.");
+    }
   };
 
   const clearAllHoldings = () => {
@@ -984,10 +1002,10 @@ export function SecondOrderEngine() {
                     onClick={(event) => {
                       event.preventDefault();
                       event.stopPropagation();
-                      clearScenarioRow();
+                      void clearScenarioRow(scenario.id);
                     }}
                   >
-                    Clear Scenario
+                    Clear
                   </button>
                 )}
               </div>
