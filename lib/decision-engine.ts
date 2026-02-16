@@ -78,60 +78,155 @@ export function normalizeHoldingWeights(
   holdings: AnalyzeInput["holdings"]
 ): AnalyzeInput["holdings"] {
   const prepared = holdings.map((holding) => ({ ...holding }));
-  const finiteWeights = prepared
-    .map((holding) => holding.weight)
-    .filter((weight): weight is number => typeof weight === "number" && Number.isFinite(weight));
-  if (finiteWeights.length === 0) {
-    return prepared;
+  const normalizedWeights = normalizeWeightScale(prepared.map((holding) => holding.weight));
+  return prepared.map((holding, index) => ({
+    ...holding,
+    weight: normalizedWeights[index]
+  }));
+}
+
+function countDecimalPlaces(value: number): number {
+  const text = Math.abs(value).toString();
+  const dot = text.indexOf(".");
+  return dot >= 0 ? text.length - dot - 1 : 0;
+}
+
+function isFiniteWeight(value: unknown): value is number {
+  return typeof value === "number" && Number.isFinite(value);
+}
+
+function scoreCandidate(
+  raw: Array<number | undefined>,
+  candidate: Array<number | undefined>
+): { sum: number; distance: number; changed: number; values: Array<number | undefined> } {
+  let sum = 0;
+  let changed = 0;
+  for (let i = 0; i < candidate.length; i += 1) {
+    const candidateValue = candidate[i];
+    if (isFiniteWeight(candidateValue)) {
+      sum += candidateValue;
+    }
+    const rawValue = raw[i];
+    if (isFiniteWeight(rawValue) && isFiniteWeight(candidateValue) && rawValue !== candidateValue) {
+      changed += 1;
+    }
   }
 
-  const maxWeight = Math.max(...finiteWeights);
-  const weightSum = finiteWeights.reduce((sum, value) => sum + value, 0);
-  const allNonNegative = finiteWeights.every((weight) => weight >= 0);
-  const shouldDetectLegacyScale =
-    allNonNegative && maxWeight <= 1 && weightSum > 2 && finiteWeights.length >= 2;
+  return {
+    sum,
+    distance: Math.abs(1 - sum),
+    changed,
+    values: candidate
+  };
+}
 
-  if (shouldDetectLegacyScale) {
-    const scaledByLegacy = prepared.map((holding) => {
-      if (typeof holding.weight !== "number" || !Number.isFinite(holding.weight)) {
-        return holding.weight;
-      }
+function buildWeightCandidates(values: Array<number | undefined>): Array<Array<number | undefined>> {
+  const map = new Map<string, Array<number | undefined>>();
+  const register = (candidate: Array<number | undefined>) => {
+    const key = candidate.map((value) => (isFiniteWeight(value) ? value.toFixed(12) : "na")).join("|");
+    if (!map.has(key)) {
+      map.set(key, candidate);
+    }
+  };
 
-      const text = holding.weight.toString();
-      const decimalPlaces = text.includes(".") ? text.split(".")[1]?.length ?? 0 : 0;
-      if (holding.weight < 0.7 && decimalPlaces <= 2) {
-        return holding.weight / 100;
+  const asIs = values.map((value) => value);
+  register(asIs);
+
+  register(values.map((value) => (isFiniteWeight(value) && value > 1 ? value / 100 : value)));
+  register(values.map((value) => (isFiniteWeight(value) ? value / 100 : value)));
+
+  register(
+    values.map((value) => {
+      if (!isFiniteWeight(value) || value < 0 || value > 1) {
+        return value;
       }
-      return holding.weight;
+      return countDecimalPlaces(value) <= 2 ? value / 100 : value;
+    })
+  );
+
+  register(
+    values.map((value) => {
+      if (!isFiniteWeight(value) || value < 0.05 || value >= 1) {
+        return value;
+    }
+      return countDecimalPlaces(value) <= 3 ? value / 100 : value;
+    })
+  );
+
+  const thresholds = Array.from(
+    new Set(
+      values
+        .filter((value): value is number => isFiniteWeight(value) && value > 0 && value < 1)
+        .map((value) => Number(value.toFixed(4)))
+    )
+  ).sort((a, b) => a - b);
+
+  for (const threshold of thresholds) {
+    register(
+      values.map((value) => {
+        if (!isFiniteWeight(value) || value <= threshold) {
+          return value;
+        }
+        return value > 1 ? value / 100 : value;
+      })
+    );
+    register(
+      values.map((value) => {
+        if (!isFiniteWeight(value) || value > threshold) {
+          return value;
+        }
+        return value > 1 ? value / 100 : value;
+      })
+    );
+  }
+
+  return [...map.values()];
+}
+
+export function normalizeWeightScale(weights: Array<number | undefined>): Array<number | undefined> {
+  const finite = weights.filter((weight): weight is number => isFiniteWeight(weight));
+  if (finite.length === 0) {
+    return weights;
+  }
+
+  const rawSum = finite.reduce((sum, value) => sum + value, 0);
+  const max = Math.max(...finite);
+  const allNonNegative = finite.every((weight) => weight >= 0);
+
+  if (rawSum >= 0.98 && rawSum <= 1.02) {
+    return weights;
+  }
+
+  const candidates = buildWeightCandidates(weights)
+    .map((candidate) => scoreCandidate(weights, candidate))
+    .filter((candidate) => candidate.sum > 0 && candidate.sum < 10)
+    .sort((left, right) => {
+      if (left.distance === right.distance) {
+        return left.changed - right.changed;
+      }
+      return left.distance - right.distance;
     });
 
-    const scaledSum = scaledByLegacy.reduce(
-      (sum, value) => sum + (typeof value === "number" ? value : 0),
-      0
-    );
-    if (scaledSum >= 0.9 && scaledSum <= 1.1) {
-      return scaledByLegacy.map((weight, index) => ({
-        ...prepared[index],
-        weight
-      }));
-    }
-
-    return prepared.map((holding) => ({
-      ...holding,
-      weight:
-        typeof holding.weight === "number" && Number.isFinite(holding.weight) && holding.weight > 1
-          ? holding.weight / 100
-          : holding.weight
-    }));
+  if (candidates.length === 0) {
+    return weights;
   }
 
-  return prepared.map((holding) => ({
-    ...holding,
-    weight:
-      typeof holding.weight === "number" && Number.isFinite(holding.weight) && holding.weight > 1
-        ? holding.weight / 100
-        : holding.weight
-  }));
+  const best = candidates[0];
+  if (best.distance <= 0.35) {
+    return best.values;
+  }
+
+  if (allNonNegative && max <= 1 && rawSum > 1.5 && rawSum < 5) {
+    const normalized = weights.map((weight) => (isFiniteWeight(weight) ? weight / rawSum : weight));
+    const normalizedSum = normalized
+      .filter((weight): weight is number => isFiniteWeight(weight))
+      .reduce((sum, value) => sum + value, 0);
+    if (normalizedSum >= 0.95 && normalizedSum <= 1.05) {
+      return normalized;
+    }
+  }
+
+  return best.values;
 }
 
 export function validatePortfolioReality(
