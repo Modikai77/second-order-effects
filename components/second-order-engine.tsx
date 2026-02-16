@@ -244,10 +244,20 @@ function parsePortfolioCsv(text: string): HoldingInput[] {
 
   const parseNumeric = (value: string | undefined): number | undefined => {
     if (!value) return undefined;
-    const cleaned = value.replace(/[£$,]/g, "").replace(/\s+/g, "");
+    const cleaned = value
+      .replace(/[£$,]/g, "")
+      .replace(/%/g, "")
+      .replace(/\s+/g, "");
     if (!cleaned) return undefined;
     const parsed = Number(cleaned);
     return Number.isFinite(parsed) ? parsed : undefined;
+  };
+
+  const parseDecimalWeight = (value: number | undefined): number | undefined => {
+    if (typeof value !== "number" || !Number.isFinite(value)) {
+      return undefined;
+    }
+    return value > 1 ? value / 100 : value;
   };
 
   const lines = text
@@ -367,9 +377,9 @@ function parsePortfolioCsv(text: string): HoldingInput[] {
       name,
       ticker: tickerIdx >= 0 ? cells[tickerIdx]?.trim() : undefined,
       weight: Number.isFinite(parsedWeight)
-        ? toPercentWeight(parsedWeight)
+        ? parseDecimalWeight(parsedWeight as number)
         : Number.isFinite(parsedWeightPct)
-          ? Number((parsedWeightPct as number).toFixed(2))
+          ? parseDecimalWeight(parsedWeightPct as number)
           : undefined,
       sensitivity,
       constraint,
@@ -386,17 +396,17 @@ function parsePortfolioCsv(text: string): HoldingInput[] {
   const hasExplicitWeight = staged.some((h) => typeof h.weight === "number");
   const hasAmountValues = staged.some((h) => typeof h._rawAmount === "number" && (h._rawAmount ?? 0) > 0);
 
-  if (!hasExplicitWeight && hasAmountValues) {
-    const totalAmount = staged.reduce((sum, h) => sum + (h._rawAmount && h._rawAmount > 0 ? h._rawAmount : 0), 0);
-    if (totalAmount <= 0) {
-      throw new Error("CSV amount column found, but total amount is zero.");
-    }
-    for (const holding of staged) {
-      if ((holding._rawAmount ?? 0) > 0) {
-        holding.weight = Number((((holding._rawAmount as number) / totalAmount) * 100).toFixed(2));
+    if (!hasExplicitWeight && hasAmountValues) {
+      const totalAmount = staged.reduce((sum, h) => sum + (h._rawAmount && h._rawAmount > 0 ? h._rawAmount : 0), 0);
+      if (totalAmount <= 0) {
+        throw new Error("CSV amount column found, but total amount is zero.");
+      }
+      for (const holding of staged) {
+        if ((holding._rawAmount ?? 0) > 0) {
+          holding.weight = Number(((holding._rawAmount as number) / totalAmount).toFixed(6));
+        }
       }
     }
-  }
 
   return staged.map(({ _rawAmount, ...holding }) => holding);
 }
