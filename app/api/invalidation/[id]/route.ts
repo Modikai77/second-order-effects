@@ -3,6 +3,7 @@ import { ZodError } from "zod";
 import { prisma } from "@/lib/prisma";
 import { indicatorPatchSchema } from "@/lib/schemas";
 import { requireAuth } from "@/lib/authz";
+import { computeStatusFromObservedValue } from "@/lib/decision-engine";
 
 export async function PATCH(
   request: Request,
@@ -30,10 +31,30 @@ export async function PATCH(
       return NextResponse.json({ error: "Not found" }, { status: 404 });
     }
 
+    let nextStatus = body.latestStatus;
+    if (typeof body.observedValue === "number") {
+      const definition = await prisma.indicatorDefinition.findFirst({
+        where: {
+          themeId: current.themeId,
+          indicatorName: current.indicatorName
+        }
+      });
+      if (definition) {
+        nextStatus = computeStatusFromObservedValue(body.observedValue, {
+          indicatorName: definition.indicatorName,
+          supportsDirection: definition.supportsDirection,
+          greenThreshold: definition.greenThreshold,
+          yellowThreshold: definition.yellowThreshold,
+          redThreshold: definition.redThreshold,
+          expectedWindow: definition.expectedWindow
+        });
+      }
+    }
+
     const updated = await prisma.invalidationItem.update({
       where: { id },
       data: {
-        latestStatus: body.latestStatus,
+        latestStatus: nextStatus,
         latestNote: body.latestNote
       }
     });

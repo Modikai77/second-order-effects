@@ -9,12 +9,17 @@ type Impact = "POS" | "NEG" | "MIXED" | "UNCERTAIN";
 type Confidence = "LOW" | "MED" | "HIGH";
 type IndicatorStatus = "GREEN" | "YELLOW" | "RED" | "UNKNOWN";
 type AssetRecommendationDirection = "POS" | "NEG" | "MIXED" | "UNCERTAIN";
+type HoldingConstraint = "LOCKED" | "SEMI_LOCKED" | "FREE";
+type HoldingPurpose = "TAX" | "SPEND_0_12M" | "SPEND_12_36M" | "LIFESTYLE_DRAWDOWN" | "LONG_TERM_GROWTH";
+type BranchName = "BASE" | "BULL" | "BEAR";
 
 type HoldingInput = {
   name: string;
   ticker?: string;
   weight?: number;
   sensitivity: Sensitivity;
+  constraint: HoldingConstraint;
+  purpose: HoldingPurpose;
   exposureTags: string[];
 };
 
@@ -39,6 +44,51 @@ type AnalysisResponse = {
     assetRecommendations?: AssetRecommendation[];
   };
   assetRecommendations?: AssetRecommendation[];
+  portfolioValidation?: {
+    weightSum: number;
+    warnings: string[];
+    errors: string[];
+    actionableWeight: number;
+    suspiciousWeightRows: string[];
+  };
+  branches?: Array<{ name: BranchName; probability: number; rationale: string }>;
+  nodeShocks?: Array<{
+    branchName: BranchName;
+    nodeKey?: string;
+    nodeLabel: string;
+    direction: "UP" | "DOWN" | "FLAT";
+    magnitudePct: number;
+    strength: "WEAK" | "MED" | "STRONG";
+    lag: "IMMEDIATE" | "M3_6" | "M6_18" | "M18_PLUS";
+    confidence: Confidence;
+    evidenceNote: string;
+  }>;
+  recommendations?: Array<{
+    symbol: string;
+    name: string;
+    assetType: "EQUITY" | "ETF";
+    direction: "POS" | "NEG";
+    action: string;
+    sizingBand: "SMALL" | "MEDIUM" | "LARGE";
+    maxPositionPct: number;
+    score: number;
+    mechanism: string;
+    catalystWindow: string;
+    riskNote: string;
+    invalidationTrigger: string;
+    portfolioRole: string;
+    actionable: boolean;
+    alreadyExpressed: boolean;
+  }>;
+  decisionSummary?: {
+    portfolioImpactP10: number;
+    portfolioImpactP50: number;
+    portfolioImpactP90: number;
+    topActions: string[];
+    topMonitors: string[];
+    changeMyMind: string[];
+  };
+  exposureContributions?: Array<{ holdingName: string; score: number; weight: number; direction: string }>;
 };
 
 type AssetRecommendation = {
@@ -66,6 +116,7 @@ type IndicatorItem = {
 type ThemeListItem = {
   id: string;
   statement: string;
+  runStatus?: "PLAYING_OUT" | "MIXED" | "INVALIDATED" | "UNASSESSED";
   createdAt: string;
   runSnapshots: Array<{ biasLabel: string; computedBiasScore: number }>;
 };
@@ -79,8 +130,17 @@ type ScenarioRecord = {
     ticker?: string | null;
     weight?: number | null;
     sensitivity: Sensitivity;
+    constraint: HoldingConstraint;
+    purpose: HoldingPurpose;
     exposureTags: string[];
   }>;
+};
+
+type UniverseVersionListItem = {
+  id: string;
+  name: string;
+  createdAt: string;
+  _count?: { companies: number };
 };
 
 const statusOptions: IndicatorStatus[] = ["UNKNOWN", "GREEN", "YELLOW", "RED"];
@@ -95,6 +155,8 @@ const emptyHolding = (): HoldingInput => ({
   name: "",
   ticker: "",
   sensitivity: "MED",
+  constraint: "FREE",
+  purpose: "LONG_TERM_GROWTH",
   exposureTags: []
 });
 
@@ -217,6 +279,7 @@ function parsePortfolioCsv(text: string): HoldingInput[] {
   const nameIdx = headerIndex(["name", "holding", "holdingname", "assetname"]);
   const tickerIdx = headerIndex(["ticker", "symbol"]);
   const weightIdx = headerIndex(["weight", "allocation", "portfolio_weight"]);
+  const weightPctIdx = headerIndex(["weightpct", "weight_percent", "weightpercentage", "allocationpct"]);
   const amountIdx = headerIndex([
     "amount",
     "value",
@@ -229,6 +292,8 @@ function parsePortfolioCsv(text: string): HoldingInput[] {
     "holdingvalue"
   ]);
   const sensitivityIdx = headerIndex(["sensitivity", "exposuresensitivity"]);
+  const constraintIdx = headerIndex(["constraint", "capitalconstraint"]);
+  const purposeIdx = headerIndex(["purpose", "bucketpurpose"]);
   const tagsIdx = headerIndex(["tags", "exposuretags", "exposure_tags"]);
 
   if (nameIdx < 0) {
@@ -264,6 +329,7 @@ function parsePortfolioCsv(text: string): HoldingInput[] {
     }
 
     const parsedWeight = parseNumeric(weightIdx >= 0 ? cells[weightIdx]?.trim() : undefined);
+    const parsedWeightPct = parseNumeric(weightPctIdx >= 0 ? cells[weightPctIdx]?.trim() : undefined);
     const parsedAmount = parseNumeric(
       chosenAmountColumn !== undefined && chosenAmountColumn >= 0
         ? cells[chosenAmountColumn]?.trim()
@@ -275,6 +341,20 @@ function parsePortfolioCsv(text: string): HoldingInput[] {
       rawSensitivity === "LOW" || rawSensitivity === "MED" || rawSensitivity === "HIGH"
         ? rawSensitivity
         : "MED";
+    const rawConstraint = constraintIdx >= 0 ? cells[constraintIdx]?.trim().toUpperCase() : "";
+    const constraint: HoldingConstraint =
+      rawConstraint === "LOCKED" || rawConstraint === "SEMI_LOCKED" || rawConstraint === "FREE"
+        ? rawConstraint
+        : "FREE";
+    const rawPurpose = purposeIdx >= 0 ? cells[purposeIdx]?.trim().toUpperCase() : "";
+    const purpose: HoldingPurpose =
+      rawPurpose === "TAX" ||
+      rawPurpose === "SPEND_0_12M" ||
+      rawPurpose === "SPEND_12_36M" ||
+      rawPurpose === "LIFESTYLE_DRAWDOWN" ||
+      rawPurpose === "LONG_TERM_GROWTH"
+        ? rawPurpose
+        : "LONG_TERM_GROWTH";
 
     const rawTags = tagsIdx >= 0 ? cells[tagsIdx] ?? "" : "";
     const exposureTags = rawTags
@@ -286,8 +366,14 @@ function parsePortfolioCsv(text: string): HoldingInput[] {
     staged.push({
       name,
       ticker: tickerIdx >= 0 ? cells[tickerIdx]?.trim() : undefined,
-      weight: Number.isFinite(parsedWeight) ? toPercentWeight(parsedWeight) : undefined,
+      weight: Number.isFinite(parsedWeight)
+        ? toPercentWeight(parsedWeight)
+        : Number.isFinite(parsedWeightPct)
+          ? Number((parsedWeightPct as number).toFixed(2))
+          : undefined,
       sensitivity,
+      constraint,
+      purpose,
       exposureTags,
       _rawAmount: parsedAmount
     });
@@ -355,11 +441,12 @@ export function SecondOrderEngine() {
   const [horizonMonths, setHorizonMonths] = useState(36);
   const [selectedModel, setSelectedModel] = useState("gpt-5.2");
   const [holdings, setHoldings] = useState<HoldingInput[]>([emptyHolding()]);
-  const [activeTab, setActiveTab] = useState<"causal" | "portfolio" | "invalidation">("causal");
+  const [activeTab, setActiveTab] = useState<"causal" | "portfolio" | "recommendations" | "invalidation">("causal");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [result, setResult] = useState<AnalysisResponse | null>(null);
   const [indicators, setIndicators] = useState<IndicatorItem[]>([]);
+  const [observedIndicatorValues, setObservedIndicatorValues] = useState<Record<string, string>>({});
   const [history, setHistory] = useState<ThemeListItem[]>([]);
   const [runTabs, setRunTabs] = useState<"recent" | "previous">("recent");
   const [scenarios, setScenarios] = useState<ScenarioRecord[]>([]);
@@ -367,6 +454,18 @@ export function SecondOrderEngine() {
   const [scenarioFile, setScenarioFile] = useState<File | null>(null);
   const [scenarioError, setScenarioError] = useState<string | null>(null);
   const [scenarioMessage, setScenarioMessage] = useState<string | null>(null);
+  const [universeVersions, setUniverseVersions] = useState<UniverseVersionListItem[]>([]);
+  const [selectedUniverseVersionId, setSelectedUniverseVersionId] = useState<string>("");
+  const [universeCsvName, setUniverseCsvName] = useState("Default Universe");
+  const [universeCsvFile, setUniverseCsvFile] = useState<File | null>(null);
+  const [universeMessage, setUniverseMessage] = useState<string | null>(null);
+  const [universeError, setUniverseError] = useState<string | null>(null);
+  const [allowWeightOverride, setAllowWeightOverride] = useState(false);
+  const [branchOverrides, setBranchOverrides] = useState<Record<BranchName, number>>({
+    BASE: 0.5,
+    BULL: 0.25,
+    BEAR: 0.25
+  });
 
   const validHoldings = useMemo(
     () => holdings.filter((h) => h.name.trim().length > 0),
@@ -379,6 +478,15 @@ export function SecondOrderEngine() {
       ),
     [result]
   );
+  const localWeightSummary = useMemo(() => {
+    const explicit = holdings.filter((h) => typeof h.weight === "number");
+    const sum = explicit.reduce((acc, h) => acc + (h.weight ?? 0), 0);
+    return {
+      hasWeights: explicit.length > 0,
+      sumPct: sum,
+      outOfRange: explicit.length > 0 && (sum < 98 || sum > 102)
+    };
+  }, [holdings]);
 
   const fetchHistory = async () => {
     const res = await fetch("/api/themes?page=1&pageSize=15");
@@ -394,13 +502,54 @@ export function SecondOrderEngine() {
     setScenarios(json.items);
   };
 
+  const fetchUniverseVersions = async () => {
+    const res = await fetch("/api/universe");
+    if (!res.ok) return;
+    const json = (await res.json()) as { items: UniverseVersionListItem[] };
+    setUniverseVersions(json.items);
+    if (!selectedUniverseVersionId && json.items[0]?.id) {
+      setSelectedUniverseVersionId(json.items[0].id);
+    }
+  };
+
   useEffect(() => {
     void fetchHistory();
     void fetchScenarios();
+    void fetchUniverseVersions();
   }, []);
 
   const updateHolding = (idx: number, patch: Partial<HoldingInput>) => {
     setHoldings((prev) => prev.map((h, i) => (i === idx ? { ...h, ...patch } : h)));
+  };
+
+  const uploadUniverseCsv = async () => {
+    setUniverseError(null);
+    setUniverseMessage(null);
+    if (!universeCsvFile) {
+      setUniverseError("Select a universe CSV file first.");
+      return;
+    }
+    try {
+      const csvText = await universeCsvFile.text();
+      const res = await fetch("/api/universe/upload", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          name: universeCsvName.trim() || "Default Universe",
+          csvText
+        })
+      });
+      const json = (await res.json()) as { ok?: boolean; error?: unknown; version?: UniverseVersionListItem };
+      if (!res.ok || !json.ok || !json.version) {
+        throw new Error(formatApiError(json.error, `Universe upload failed (${res.status})`));
+      }
+      setUniverseMessage(`Uploaded universe: ${json.version.name}`);
+      setUniverseCsvFile(null);
+      await fetchUniverseVersions();
+      setSelectedUniverseVersionId(json.version.id);
+    } catch (uploadError) {
+      setUniverseError(uploadError instanceof Error ? uploadError.message : "Universe upload failed.");
+    }
   };
 
   const loadScenario = (scenario: ScenarioRecord) => {
@@ -410,6 +559,8 @@ export function SecondOrderEngine() {
         ticker: holding.ticker ?? "",
         weight: toPercentWeight(holding.weight),
         sensitivity: holding.sensitivity,
+        constraint: holding.constraint ?? "FREE",
+        purpose: holding.purpose ?? "LONG_TERM_GROWTH",
         exposureTags: Array.isArray(holding.exposureTags) ? holding.exposureTags : []
       }))
     );
@@ -469,11 +620,18 @@ export function SecondOrderEngine() {
     setLoading(true);
 
     try {
-        const payload = {
+      const payload = {
         statement,
         probability: probabilityPct / 100,
         horizonMonths,
         modelName: selectedModel,
+        branchMode: "MODEL_SUGGESTS_USER_OVERRIDES",
+        allowWeightOverride,
+        universeVersionId: selectedUniverseVersionId || undefined,
+        branchOverrides: (["BASE", "BULL", "BEAR"] as const).map((name) => ({
+          name,
+          probability: Math.max(0, branchOverrides[name] / 100)
+        })),
         holdings: validHoldings.map((h) => ({
           ...h,
           weight: Number.isFinite(h.weight) ? toDecimalWeight(h.weight) : undefined,
@@ -521,11 +679,35 @@ export function SecondOrderEngine() {
       probability: number;
       horizonMonths: number;
       effects: Array<{ layer: "FIRST" | "SECOND" | "THIRD" | "FOURTH"; description: string; impactDirection: Impact; confidence: Confidence }>;
-      holdings: Array<{ name: string; ticker?: string; weight?: number; sensitivity: Sensitivity; exposureTags: string[] }>;
+      holdings: Array<{
+        name: string;
+        ticker?: string;
+        weight?: number;
+        sensitivity: Sensitivity;
+        constraint: HoldingConstraint;
+        purpose: HoldingPurpose;
+        exposureTags: string[];
+      }>;
       portfolioMappings: Array<{ exposureType: string; netImpact: Impact; mechanism: string; confidence: Confidence; holding: { name: string } }>;
       invalidationItems: Array<{ id: string; assumption: string; breakpointSignal: string; indicatorName: string; latestStatus: IndicatorStatus; latestNote?: string }>;
       runSnapshots: Array<{ computedBiasScore: number; biasLabel: string }>;
       assetRecommendations: AssetRecommendation[];
+      branches?: Array<{ name: BranchName; probability: number; rationale: string }>;
+      nodeShocks?: Array<{
+        branchName: BranchName;
+        nodeKey: string;
+        nodeLabel: string;
+        direction: "UP" | "DOWN" | "FLAT";
+        magnitudePct: number;
+        strength: "WEAK" | "MED" | "STRONG";
+        lag: "IMMEDIATE" | "M3_6" | "M6_18" | "M18_PLUS";
+        confidence: Confidence;
+        evidenceNote: string;
+      }>;
+      recommendations?: AnalysisResponse["recommendations"];
+      decisionSummary?: AnalysisResponse["decisionSummary"];
+      exposureContributions?: AnalysisResponse["exposureContributions"];
+      portfolioValidation?: AnalysisResponse["portfolioValidation"];
     };
 
     setStatement(json.statement);
@@ -537,6 +719,8 @@ export function SecondOrderEngine() {
         ticker: h.ticker ?? "",
         weight: toPercentWeight(h.weight),
         sensitivity: h.sensitivity,
+        constraint: h.constraint ?? "FREE",
+        purpose: h.purpose ?? "LONG_TERM_GROWTH",
         exposureTags: h.exposureTags
       }))
     );
@@ -575,7 +759,13 @@ export function SecondOrderEngine() {
         })),
         assetRecommendations: json.assetRecommendations
       },
-      assetRecommendations: json.assetRecommendations
+      assetRecommendations: json.assetRecommendations,
+      branches: json.branches,
+      nodeShocks: json.nodeShocks,
+      recommendations: json.recommendations,
+      decisionSummary: json.decisionSummary,
+      exposureContributions: json.exposureContributions,
+      portfolioValidation: json.portfolioValidation
     });
 
     setIndicators(
@@ -590,7 +780,12 @@ export function SecondOrderEngine() {
     );
   };
 
-  const updateIndicator = async (idx: number, nextStatus: IndicatorStatus, nextNote: string) => {
+  const updateIndicator = async (
+    idx: number,
+    nextStatus: IndicatorStatus,
+    nextNote: string,
+    observedValue?: number
+  ) => {
     const indicator = indicators[idx];
     if (!indicator) {
       return;
@@ -607,7 +802,7 @@ export function SecondOrderEngine() {
     await fetch(`/api/invalidation/${indicator.id}`, {
       method: "PATCH",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ latestStatus: nextStatus, latestNote: nextNote })
+      body: JSON.stringify({ latestStatus: nextStatus, latestNote: nextNote, observedValue })
     });
   };
 
@@ -645,14 +840,16 @@ export function SecondOrderEngine() {
                   style={{ textAlign: "left" }}
                 >
                   <strong>{item.statement}</strong>
-                  <div className="muted" style={{ fontSize: 12 }}>
-                    {new Date(item.createdAt).toLocaleString()} |{" "}
-                    <span className={`badge ${biasToneClass(item.runSnapshots[0]?.biasLabel ?? "NEUTRAL")}`}>
-                      {item.runSnapshots[0]?.biasLabel ?? "NEUTRAL"}
-                    </span>
-                  </div>
-                </button>
-              ))
+                <div className="muted" style={{ fontSize: 12 }}>
+                  {new Date(item.createdAt).toLocaleString()} |{" "}
+                  <span className={`badge ${biasToneClass(item.runSnapshots[0]?.biasLabel ?? "NEUTRAL")}`}>
+                    {item.runSnapshots[0]?.biasLabel ?? "NEUTRAL"}
+                  </span>
+                  {" | "}
+                  <span className="badge tone-neutral">{item.runStatus ?? "UNASSESSED"}</span>
+                </div>
+              </button>
+            ))
             )}
           </div>
         )}
@@ -707,6 +904,53 @@ export function SecondOrderEngine() {
             ))
           )}
         </div>
+
+        <hr style={{ border: 0, borderTop: "1px solid var(--line)" }} />
+        <h3>Company Universe</h3>
+        <div className="grid grid-2">
+          <div className="grid" style={{ gap: 6 }}>
+            <label htmlFor="universe-select">Universe version</label>
+            <select
+              id="universe-select"
+              value={selectedUniverseVersionId}
+              onChange={(e) => setSelectedUniverseVersionId(e.target.value)}
+            >
+              <option value="">None selected</option>
+              {universeVersions.map((item) => (
+                <option key={item.id} value={item.id}>
+                  {item.name} ({item._count?.companies ?? 0})
+                </option>
+              ))}
+            </select>
+          </div>
+          <div className="grid" style={{ gap: 6 }}>
+            <label htmlFor="universe-name">New universe name</label>
+            <input
+              id="universe-name"
+              value={universeCsvName}
+              onChange={(e) => setUniverseCsvName(e.target.value)}
+              placeholder="Default Universe"
+            />
+          </div>
+        </div>
+        <div className="grid grid-2">
+          <div className="grid" style={{ gap: 6 }}>
+            <label htmlFor="universe-csv">Upload universe CSV</label>
+            <input
+              id="universe-csv"
+              type="file"
+              accept=".csv,text/csv"
+              onChange={(e) => setUniverseCsvFile(e.target.files?.[0] ?? null)}
+            />
+          </div>
+          <div style={{ display: "flex", alignItems: "end" }}>
+            <button type="button" onClick={uploadUniverseCsv}>
+              Upload Universe CSV
+            </button>
+          </div>
+        </div>
+        {universeError ? <p className="error">{universeError}</p> : null}
+        {universeMessage ? <p className="muted">{universeMessage}</p> : null}
       </div>
 
       <div className="panel grid" style={{ gap: 12 }}>
@@ -754,6 +998,41 @@ export function SecondOrderEngine() {
             />
           </div>
         </div>
+        <div className="grid grid-2">
+          <div className="grid" style={{ gap: 6 }}>
+            <label htmlFor="branch-base">Base probability (%)</label>
+            <input
+              id="branch-base"
+              type="number"
+              min={0}
+              max={100}
+              value={branchOverrides.BASE}
+              onChange={(e) => setBranchOverrides((prev) => ({ ...prev, BASE: Number(e.target.value) }))}
+            />
+          </div>
+          <div className="grid" style={{ gap: 6 }}>
+            <label htmlFor="branch-bull">Bull probability (%)</label>
+            <input
+              id="branch-bull"
+              type="number"
+              min={0}
+              max={100}
+              value={branchOverrides.BULL}
+              onChange={(e) => setBranchOverrides((prev) => ({ ...prev, BULL: Number(e.target.value) }))}
+            />
+          </div>
+          <div className="grid" style={{ gap: 6 }}>
+            <label htmlFor="branch-bear">Bear probability (%)</label>
+            <input
+              id="branch-bear"
+              type="number"
+              min={0}
+              max={100}
+              value={branchOverrides.BEAR}
+              onChange={(e) => setBranchOverrides((prev) => ({ ...prev, BEAR: Number(e.target.value) }))}
+            />
+          </div>
+        </div>
 
         <div className="grid" style={{ gap: 8 }}>
           <h3>Holdings</h3>
@@ -764,6 +1043,8 @@ export function SecondOrderEngine() {
                 <th>Ticker</th>
                 <th>Weight (%)</th>
                 <th>Sensitivity</th>
+                <th>Constraint</th>
+                <th>Purpose</th>
                 <th>Tags (comma separated)</th>
               </tr>
             </thead>
@@ -808,6 +1089,28 @@ export function SecondOrderEngine() {
                     </select>
                   </td>
                   <td>
+                    <select
+                      value={holding.constraint}
+                      onChange={(e) => updateHolding(idx, { constraint: e.target.value as HoldingConstraint })}
+                    >
+                      <option value="FREE">FREE</option>
+                      <option value="SEMI_LOCKED">SEMI_LOCKED</option>
+                      <option value="LOCKED">LOCKED</option>
+                    </select>
+                  </td>
+                  <td>
+                    <select
+                      value={holding.purpose}
+                      onChange={(e) => updateHolding(idx, { purpose: e.target.value as HoldingPurpose })}
+                    >
+                      <option value="LONG_TERM_GROWTH">LONG_TERM_GROWTH</option>
+                      <option value="LIFESTYLE_DRAWDOWN">LIFESTYLE_DRAWDOWN</option>
+                      <option value="SPEND_12_36M">SPEND_12_36M</option>
+                      <option value="SPEND_0_12M">SPEND_0_12M</option>
+                      <option value="TAX">TAX</option>
+                    </select>
+                  </td>
+                  <td>
                     <input
                       value={holding.exposureTags.join(", ")}
                       onChange={(e) =>
@@ -836,10 +1139,33 @@ export function SecondOrderEngine() {
             <button
               type="button"
               onClick={submit}
-              disabled={loading || !statement || validHoldings.length === 0}
+              disabled={
+                loading ||
+                !statement ||
+                validHoldings.length === 0 ||
+                (localWeightSummary.outOfRange && !allowWeightOverride)
+              }
             >
               {loading ? "Analyzing..." : "Run analysis"}
             </button>
+          </div>
+          <div className={`panel ${localWeightSummary.outOfRange ? "tone-neg" : "tone-neutral"}`}>
+            <p>
+              Weight sum: {localWeightSummary.sumPct.toFixed(2)}%
+              {!localWeightSummary.hasWeights ? " (equal-weighting fallback)" : ""}
+            </p>
+            {localWeightSummary.outOfRange ? (
+              <p className="error">Weight sum must be close to 100% unless override is enabled.</p>
+            ) : null}
+            <label style={{ display: "flex", alignItems: "center", gap: 8 }}>
+              <input
+                type="checkbox"
+                checked={allowWeightOverride}
+                onChange={(e) => setAllowWeightOverride(e.target.checked)}
+                style={{ width: 16 }}
+              />
+              Allow weight-sum override for this run
+            </label>
           </div>
         </div>
         {error && <p className="error">{error}</p>}
@@ -854,6 +1180,26 @@ export function SecondOrderEngine() {
         </div>
       )}
 
+      {result?.decisionSummary && (
+        <div className="panel grid" style={{ gap: 8 }}>
+          <h3>Decision</h3>
+          <p>
+            Scenario impact (P10/P50/P90): {result.decisionSummary.portfolioImpactP10.toFixed(3)} /{" "}
+            {result.decisionSummary.portfolioImpactP50.toFixed(3)} /{" "}
+            {result.decisionSummary.portfolioImpactP90.toFixed(3)}
+          </p>
+          <p>
+            Top Actions: {result.decisionSummary.topActions.join(" | ")}
+          </p>
+          <p>
+            Top Monitors: {result.decisionSummary.topMonitors.join(" | ")}
+          </p>
+          <p>
+            Change My Mind: {result.decisionSummary.changeMyMind.join(" | ")}
+          </p>
+        </div>
+      )}
+
       {result?.analysis && (
         <div className="panel grid" style={{ gap: 12 }}>
           <div style={{ display: "flex", gap: 8 }}>
@@ -862,6 +1208,12 @@ export function SecondOrderEngine() {
             </button>
             <button className={activeTab === "portfolio" ? "" : "secondary"} onClick={() => setActiveTab("portfolio")}>
               Portfolio Impact
+            </button>
+            <button
+              className={activeTab === "recommendations" ? "" : "secondary"}
+              onClick={() => setActiveTab("recommendations")}
+            >
+              Recommendations
             </button>
             <button
               className={activeTab === "invalidation" ? "" : "secondary"}
@@ -890,6 +1242,38 @@ export function SecondOrderEngine() {
                   </ul>
                 </div>
               ))}
+
+              {result.nodeShocks && result.nodeShocks.length > 0 ? (
+                <div>
+                  <h3>Branch Node Shocks</h3>
+                  <table>
+                    <thead>
+                      <tr>
+                        <th>Branch</th>
+                        <th>Node</th>
+                        <th>Direction</th>
+                        <th>Magnitude</th>
+                        <th>Strength</th>
+                        <th>Lag</th>
+                        <th>Confidence</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {result.nodeShocks.slice(0, 18).map((shock, idx) => (
+                        <tr key={`shock-${idx}`}>
+                          <td>{shock.branchName}</td>
+                          <td>{shock.nodeLabel}</td>
+                          <td>{shock.direction}</td>
+                          <td>{(shock.magnitudePct * 100).toFixed(1)}%</td>
+                          <td>{shock.strength}</td>
+                          <td>{shock.lag}</td>
+                          <td>{shock.confidence}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              ) : null}
 
               <div>
                 <h3>Higher-Order Asset Recommendations</h3>
@@ -937,7 +1321,47 @@ export function SecondOrderEngine() {
           )}
 
           {activeTab === "portfolio" && (
-            <div data-testid="portfolio-tab">
+            <div className="grid" style={{ gap: 12 }} data-testid="portfolio-tab">
+              {result.portfolioValidation ? (
+                <div className={`panel ${result.portfolioValidation.errors.length > 0 ? "tone-neg" : "tone-neutral"}`}>
+                  <p>Weight sum: {(result.portfolioValidation.weightSum * 100).toFixed(2)}%</p>
+                  {result.portfolioValidation.warnings.map((warning, idx) => (
+                    <p className="muted" key={`pv-w-${idx}`}>
+                      {warning}
+                    </p>
+                  ))}
+                  {result.portfolioValidation.errors.map((errText, idx) => (
+                    <p className="error" key={`pv-e-${idx}`}>
+                      {errText}
+                    </p>
+                  ))}
+                </div>
+              ) : null}
+              {result.exposureContributions && result.exposureContributions.length > 0 ? (
+                <div className="panel">
+                  <h3>Top Contribution Drivers</h3>
+                  <table>
+                    <thead>
+                      <tr>
+                        <th>Holding</th>
+                        <th>Score</th>
+                        <th>Weight</th>
+                        <th>Direction</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {result.exposureContributions.slice(0, 8).map((item, idx) => (
+                        <tr key={`contrib-${idx}`}>
+                          <td>{item.holdingName}</td>
+                          <td>{item.score.toFixed(3)}</td>
+                          <td>{(item.weight * 100).toFixed(2)}%</td>
+                          <td>{item.direction}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              ) : null}
               <table>
                 <thead>
                   <tr>
@@ -971,6 +1395,32 @@ export function SecondOrderEngine() {
             </div>
           )}
 
+          {activeTab === "recommendations" && (
+            <div className="grid" style={{ gap: 10 }} data-testid="recommendations-tab">
+              {!result.recommendations || result.recommendations.length === 0 ? (
+                <p className="muted">No ranked expressions available. Upload a universe CSV to enable this.</p>
+              ) : (
+                result.recommendations.map((recommendation, idx) => (
+                  <div className="panel grid" style={{ gap: 6 }} key={`rec-${idx}`}>
+                    <p>
+                      <strong>{recommendation.symbol}</strong> ({recommendation.name}) | {recommendation.action} |{" "}
+                      {recommendation.direction} | {recommendation.sizingBand} | max {(recommendation.maxPositionPct * 100).toFixed(2)}%
+                    </p>
+                    <p className="muted">Role: {recommendation.portfolioRole}</p>
+                    <p>{recommendation.mechanism}</p>
+                    <p className="muted">Catalyst: {recommendation.catalystWindow}</p>
+                    <p className="muted">Risk: {recommendation.riskNote}</p>
+                    <p className="muted">Invalidation: {recommendation.invalidationTrigger}</p>
+                    <p className={`badge ${recommendation.actionable ? "tone-pos" : "tone-neutral"}`}>
+                      {recommendation.actionable ? "Actionable" : "Non-actionable"}
+                      {recommendation.alreadyExpressed ? " | Already expressed" : ""}
+                    </p>
+                  </div>
+                ))
+              )}
+            </div>
+          )}
+
           {activeTab === "invalidation" && (
             <div className="grid" style={{ gap: 10 }} data-testid="invalidation-tab">
               {indicators.map((item, idx) => (
@@ -1000,6 +1450,30 @@ export function SecondOrderEngine() {
                       onChange={(e) => updateIndicator(idx, item.latestStatus, e.target.value)}
                       placeholder="Manual note"
                     />
+                  </div>
+                  <div className="grid grid-2">
+                    <input
+                      type="number"
+                      placeholder="Observed value (optional)"
+                      value={observedIndicatorValues[item.id ?? String(idx)] ?? ""}
+                      onChange={(e) =>
+                        setObservedIndicatorValues((prev) => ({
+                          ...prev,
+                          [item.id ?? String(idx)]: e.target.value
+                        }))
+                      }
+                    />
+                    <button
+                      type="button"
+                      className="secondary"
+                      onClick={() => {
+                        const raw = observedIndicatorValues[item.id ?? String(idx)];
+                        const observed = raw === undefined || raw === "" ? undefined : Number(raw);
+                        void updateIndicator(idx, item.latestStatus, item.latestNote ?? "", observed);
+                      }}
+                    >
+                      Apply Observed Value
+                    </button>
                   </div>
                 </div>
               ))}

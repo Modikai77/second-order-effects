@@ -52,6 +52,68 @@ enum BiasLabel {
   STRONG_POS
 }
 
+enum HoldingConstraint {
+  LOCKED
+  SEMI_LOCKED
+  FREE
+}
+
+enum HoldingPurpose {
+  TAX
+  SPEND_0_12M
+  SPEND_12_36M
+  LIFESTYLE_DRAWDOWN
+  LONG_TERM_GROWTH
+}
+
+enum RunStatus {
+  PLAYING_OUT
+  MIXED
+  INVALIDATED
+  UNASSESSED
+}
+
+enum ShockDirection {
+  UP
+  DOWN
+  FLAT
+}
+
+enum StrengthBand {
+  WEAK
+  MED
+  STRONG
+}
+
+enum LagBand {
+  IMMEDIATE
+  M3_6
+  M6_18
+  M18_PLUS
+}
+
+enum SizingBand {
+  SMALL
+  MEDIUM
+  LARGE
+}
+
+enum BranchName {
+  BASE
+  BULL
+  BEAR
+}
+
+enum UniverseAssetType {
+  EQUITY
+  ETF
+}
+
+enum IndicatorSupportDirection {
+  HIGHER_SUPPORTS
+  LOWER_SUPPORTS
+}
+
 model User {
   id                String    @id @default(cuid())
   name              String?
@@ -63,6 +125,7 @@ model User {
 
   themes             Theme[]
   portfolioScenarios PortfolioScenario[]
+  universeVersions   CompanyUniverseVersion[]
   accounts           Account[]
   sessions           Session[]
 
@@ -74,6 +137,8 @@ model Theme {
   statement     String
   probability   Float
   horizonMonths Int                @map("horizon_months")
+  runStatus     RunStatus          @default(UNASSESSED) @map("run_status")
+  portfolioScenarioId String?      @map("portfolio_scenario_id")
   createdAt     DateTime           @default(now()) @map("created_at")
   updatedAt     DateTime           @updatedAt @map("updated_at")
   userId        String?            @map("user_id")
@@ -83,7 +148,11 @@ model Theme {
   portfolioMappings  PortfolioMapping[]
   invalidationItems  InvalidationItem[]
   runSnapshots       RunSnapshot[]
+  branches           ThemeBranch[]
+  recommendations    ExpressionRecommendation[]
+  indicatorDefinitions IndicatorDefinition[]
   user               User?              @relation(fields: [userId], references: [id], onDelete: Cascade)
+  scenario           PortfolioScenario? @relation(fields: [portfolioScenarioId], references: [id], onDelete: SetNull)
 
   @@index([userId])
   @@map("themes")
@@ -110,6 +179,8 @@ model Holding {
   ticker       String?
   weight       Float?
   sensitivity  SensitivityLevel
+  constraint   HoldingConstraint @default(FREE)
+  purpose      HoldingPurpose    @default(LONG_TERM_GROWTH)
   exposureTags Json             @map("exposure_tags")
 
   theme     Theme             @relation(fields: [themeId], references: [id], onDelete: Cascade)
@@ -173,6 +244,7 @@ model PortfolioScenario {
 
   holdings  ScenarioHolding[]
   user      User?             @relation(fields: [userId], references: [id], onDelete: Cascade)
+  themes    Theme[]
 
   @@index([userId])
   @@map("portfolio_scenarios")
@@ -185,12 +257,118 @@ model ScenarioHolding {
   ticker       String?
   weight       Float?
   sensitivity  SensitivityLevel
+  constraint   HoldingConstraint @default(FREE)
+  purpose      HoldingPurpose    @default(LONG_TERM_GROWTH)
   exposureTags Json             @map("exposure_tags")
   orderIndex   Int              @map("order_index")
 
   scenario PortfolioScenario @relation(fields: [scenarioId], references: [id], onDelete: Cascade)
 
   @@map("scenario_holdings")
+}
+
+model ThemeBranch {
+  id          String      @id @default(cuid())
+  themeId     String      @map("theme_id")
+  name        BranchName
+  probability Float
+  rationale   String
+  createdAt   DateTime    @default(now()) @map("created_at")
+
+  theme      Theme           @relation(fields: [themeId], references: [id], onDelete: Cascade)
+  nodeShocks ThemeNodeShock[]
+
+  @@map("theme_branches")
+}
+
+model ThemeNodeShock {
+  id          String        @id @default(cuid())
+  branchId    String        @map("branch_id")
+  nodeKey     String        @map("node_key")
+  nodeLabel   String        @map("node_label")
+  direction   ShockDirection
+  magnitudePct Float        @map("magnitude_pct")
+  strength    StrengthBand
+  lag         LagBand
+  confidence  ConfidenceLevel
+  evidenceNote String       @map("evidence_note")
+
+  branch ThemeBranch @relation(fields: [branchId], references: [id], onDelete: Cascade)
+
+  @@map("theme_node_shocks")
+}
+
+model ExpressionRecommendation {
+  id                 String          @id @default(cuid())
+  themeId            String          @map("theme_id")
+  symbol             String
+  name               String
+  assetType          UniverseAssetType @map("asset_type")
+  direction          ImpactDirection
+  action             String
+  sizingBand         SizingBand      @map("sizing_band")
+  maxPositionPct     Float           @map("max_position_pct")
+  score              Float
+  mechanism          String
+  catalystWindow     String          @map("catalyst_window")
+  pricedInNote       String          @map("priced_in_note")
+  riskNote           String          @map("risk_note")
+  invalidationTrigger String         @map("invalidation_trigger")
+  portfolioRole      String          @map("portfolio_role")
+  actionable         Boolean         @default(true)
+  alreadyExpressed   Boolean         @default(false) @map("already_expressed")
+
+  theme Theme @relation(fields: [themeId], references: [id], onDelete: Cascade)
+
+  @@map("expression_recommendations")
+}
+
+model CompanyUniverseVersion {
+  id        String   @id @default(cuid())
+  userId    String   @map("user_id")
+  name      String
+  createdAt DateTime @default(now()) @map("created_at")
+
+  user      User              @relation(fields: [userId], references: [id], onDelete: Cascade)
+  companies CompanyExposure[]
+
+  @@index([userId])
+  @@map("company_universe_versions")
+}
+
+model CompanyExposure {
+  id                    String            @id @default(cuid())
+  versionId             String            @map("version_id")
+  symbol                String
+  companyName           String            @map("company_name")
+  assetType             UniverseAssetType @map("asset_type")
+  region                String?
+  currency              String?
+  liquidityClass        String            @map("liquidity_class")
+  maxPositionDefaultPct Float             @default(0.05) @map("max_position_default_pct")
+  tags                  Json
+  exposureVector        Json              @map("exposure_vector")
+
+  version CompanyUniverseVersion @relation(fields: [versionId], references: [id], onDelete: Cascade)
+
+  @@index([versionId])
+  @@map("company_exposures")
+}
+
+model IndicatorDefinition {
+  id                String                     @id @default(cuid())
+  themeId           String                     @map("theme_id")
+  indicatorName     String                     @map("indicator_name")
+  sourceType        TrackingMode               @default(MANUAL) @map("source_type")
+  supportsDirection IndicatorSupportDirection  @map("supports_direction")
+  greenThreshold    Float                      @map("green_threshold")
+  yellowThreshold   Float                      @map("yellow_threshold")
+  redThreshold      Float                      @map("red_threshold")
+  expectedWindow    String                     @map("expected_window")
+
+  theme Theme @relation(fields: [themeId], references: [id], onDelete: Cascade)
+
+  @@map("indicator_definitions")
 }
 
 model Account {

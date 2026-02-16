@@ -47,6 +47,8 @@ export async function POST(request: Request) {
           ticker: holding.ticker,
           weight: holding.weight,
           sensitivity: holding.sensitivity,
+          constraint: holding.constraint,
+          purpose: holding.purpose,
           exposureTags: holding.exposureTags,
           orderIndex: index
         }))

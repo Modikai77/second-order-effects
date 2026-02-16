@@ -18,7 +18,27 @@ describe("POST /api/themes/analyze", () => {
     vi.mocked(analyzeAndPersist).mockResolvedValueOnce({
       ok: true,
       themeId: "theme-1",
-      bias: { portfolioBias: 0.3, biasLabel: "POS", contributions: [] },
+      bias: { portfolioBias: 0.3, biasLabel: "POS" as const, contributions: [] },
+      portfolioValidation: {
+        weightSum: 1,
+        warnings: [],
+        errors: [],
+        actionableWeight: 1,
+        suspiciousWeightRows: []
+      },
+      branches: [],
+      nodeShocks: [],
+      recommendations: [],
+      indicatorDefinitions: [],
+      exposureContributions: [],
+      decisionSummary: {
+        portfolioImpactP10: -0.1,
+        portfolioImpactP50: 0,
+        portfolioImpactP90: 0.1,
+        topActions: [],
+        topMonitors: [],
+        changeMyMind: []
+      },
       analysis: {
         effectsByLayer: { first: [], second: [], third: [], fourth: [] },
         assetRecommendations: [],

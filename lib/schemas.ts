@@ -4,6 +4,22 @@ export const impactDirectionSchema = z.enum(["POS", "NEG", "MIXED", "UNCERTAIN"]
 export const confidenceLevelSchema = z.enum(["LOW", "MED", "HIGH"]);
 export const sensitivityLevelSchema = z.enum(["LOW", "MED", "HIGH"]);
 export const biasLabelSchema = z.enum(["STRONG_NEG", "NEG", "NEUTRAL", "POS", "STRONG_POS"]);
+export const holdingConstraintSchema = z.enum(["LOCKED", "SEMI_LOCKED", "FREE"]);
+export const holdingPurposeSchema = z.enum([
+  "TAX",
+  "SPEND_0_12M",
+  "SPEND_12_36M",
+  "LIFESTYLE_DRAWDOWN",
+  "LONG_TERM_GROWTH"
+]);
+export const runStatusSchema = z.enum(["PLAYING_OUT", "MIXED", "INVALIDATED", "UNASSESSED"]);
+export const branchNameSchema = z.enum(["BASE", "BULL", "BEAR"]);
+export const shockDirectionSchema = z.enum(["UP", "DOWN", "FLAT"]);
+export const strengthBandSchema = z.enum(["WEAK", "MED", "STRONG"]);
+export const lagBandSchema = z.enum(["IMMEDIATE", "M3_6", "M6_18", "M18_PLUS"]);
+export const sizingBandSchema = z.enum(["SMALL", "MEDIUM", "LARGE"]);
+export const indicatorSupportDirectionSchema = z.enum(["HIGHER_SUPPORTS", "LOWER_SUPPORTS"]);
+export const universeAssetTypeSchema = z.enum(["EQUITY", "ETF"]);
 export const assetCategorySchema = z.enum([
   "EQUITY",
   "ETF",
@@ -32,6 +48,8 @@ export const holdingInputSchema = z.object({
     }, z.number().min(0).max(1))
     .optional(),
   sensitivity: sensitivityLevelSchema,
+  constraint: holdingConstraintSchema.default("FREE"),
+  purpose: holdingPurposeSchema.default("LONG_TERM_GROWTH"),
   exposureTags: z.array(z.string().min(1).max(50)).max(12)
 });
 
@@ -40,6 +58,19 @@ export const analyzeInputSchema = z.object({
   probability: z.number().min(0).max(1),
   horizonMonths: z.number().int().min(1).max(120),
   modelName: z.string().min(1).max(80).optional(),
+  branchMode: z.literal("MODEL_SUGGESTS_USER_OVERRIDES").default("MODEL_SUGGESTS_USER_OVERRIDES"),
+  portfolioScenarioId: z.string().cuid().optional(),
+  universeVersionId: z.string().cuid().optional(),
+  allowWeightOverride: z.boolean().default(false),
+  branchOverrides: z
+    .array(
+      z.object({
+        name: branchNameSchema,
+        probability: z.number().min(0).max(1)
+      })
+    )
+    .max(3)
+    .optional(),
   holdings: z.array(holdingInputSchema).min(1).max(100)
 });
 
@@ -52,6 +83,69 @@ const effectSchema = z.object({
   description: z.string().min(3).max(500),
   impactDirection: impactDirectionSchema,
   confidence: confidenceLevelSchema
+});
+
+export const branchSchema = z.object({
+  name: branchNameSchema,
+  probability: z.number().min(0).max(1),
+  rationale: z.string().min(3).max(500)
+});
+
+export const nodeShockSchema = z.object({
+  branchName: branchNameSchema,
+  nodeKey: z.string().min(2).max(120),
+  nodeLabel: z.string().min(2).max(180),
+  direction: shockDirectionSchema,
+  magnitudePct: z.number().min(-1).max(1),
+  strength: strengthBandSchema,
+  lag: lagBandSchema,
+  confidence: confidenceLevelSchema,
+  evidenceNote: z.string().min(2).max(300)
+});
+
+export const expressionRecommendationSchema = z.object({
+  symbol: z.string().min(1).max(32),
+  name: z.string().min(2).max(120),
+  assetType: universeAssetTypeSchema,
+  direction: z.enum(["POS", "NEG"]),
+  action: z.string().min(2).max(40),
+  sizingBand: sizingBandSchema,
+  maxPositionPct: z.number().min(0).max(1),
+  score: z.number(),
+  mechanism: z.string().min(5).max(900),
+  catalystWindow: z.string().min(2).max(120),
+  pricedInNote: z.string().min(2).max(300),
+  riskNote: z.string().min(2).max(300),
+  invalidationTrigger: z.string().min(2).max(300),
+  portfolioRole: z.string().min(2).max(60),
+  actionable: z.boolean(),
+  alreadyExpressed: z.boolean()
+});
+
+export const indicatorDefinitionSchema = z.object({
+  indicatorName: z.string().min(2).max(120),
+  supportsDirection: indicatorSupportDirectionSchema,
+  greenThreshold: z.number(),
+  yellowThreshold: z.number(),
+  redThreshold: z.number(),
+  expectedWindow: z.string().min(2).max(120)
+});
+
+export const decisionSummarySchema = z.object({
+  portfolioImpactP10: z.number().min(-1).max(1),
+  portfolioImpactP50: z.number().min(-1).max(1),
+  portfolioImpactP90: z.number().min(-1).max(1),
+  topActions: z.array(z.string().min(2).max(200)).max(3),
+  topMonitors: z.array(z.string().min(2).max(200)).max(3),
+  changeMyMind: z.array(z.string().min(2).max(200)).max(3)
+});
+
+export const portfolioValidationSchema = z.object({
+  weightSum: z.number(),
+  warnings: z.array(z.string()),
+  errors: z.array(z.string()),
+  actionableWeight: z.number().min(0).max(1),
+  suspiciousWeightRows: z.array(z.string())
 });
 
 export const assetRecommendationSchema = z.object({
@@ -95,7 +189,17 @@ export const analysisModelOutputSchema = z.object({
       confidence: confidenceLevelSchema
     })
   ),
-  assetRecommendations: z.array(assetRecommendationSchema).max(12).default([])
+  assetRecommendations: z.array(assetRecommendationSchema).max(12).default([]),
+  branches: z.array(branchSchema).length(3).optional(),
+  nodeShocks: z.array(nodeShockSchema).optional(),
+  indicatorDefinitions: z.array(indicatorDefinitionSchema).optional(),
+  expressionRecommendations: z.array(expressionRecommendationSchema).optional(),
+  decisionSummary: decisionSummarySchema.optional()
+});
+
+export const universeUploadInputSchema = z.object({
+  name: z.string().min(2).max(120),
+  csvText: z.string().min(10)
 });
 
 export const registerInputSchema = z
@@ -113,6 +217,12 @@ export const registerInputSchema = z
 export type AnalyzeInput = z.infer<typeof analyzeInputSchema>;
 export type AnalysisModelOutput = z.infer<typeof analysisModelOutputSchema>;
 export type AssetRecommendation = z.infer<typeof assetRecommendationSchema>;
+export type Branch = z.infer<typeof branchSchema>;
+export type NodeShock = z.infer<typeof nodeShockSchema>;
+export type ExpressionRecommendation = z.infer<typeof expressionRecommendationSchema>;
+export type IndicatorDefinition = z.infer<typeof indicatorDefinitionSchema>;
+export type DecisionSummary = z.infer<typeof decisionSummarySchema>;
+export type PortfolioValidation = z.infer<typeof portfolioValidationSchema>;
 
 function clampText(value: unknown, max: number): unknown {
   if (typeof value !== "string") {
@@ -349,5 +459,6 @@ export function extractAssetRecommendationsFromSnapshot(rawOutputJson: unknown):
 
 export const indicatorPatchSchema = z.object({
   latestStatus: z.enum(["GREEN", "YELLOW", "RED", "UNKNOWN"]),
-  latestNote: z.string().max(500).optional()
+  latestNote: z.string().max(500).optional(),
+  observedValue: z.number().optional()
 });

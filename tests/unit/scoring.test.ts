@@ -4,16 +4,16 @@ import { biasLabelFromScore, computePortfolioBias, normalizeWeights } from "@/li
 describe("normalizeWeights", () => {
   it("uses equal weight when none are provided", () => {
     const result = normalizeWeights([
-      { name: "A", sensitivity: "MED", exposureTags: [] },
-      { name: "B", sensitivity: "MED", exposureTags: [] }
+      { name: "A", sensitivity: "MED", constraint: "FREE", purpose: "LONG_TERM_GROWTH", exposureTags: [] },
+      { name: "B", sensitivity: "MED", constraint: "FREE", purpose: "LONG_TERM_GROWTH", exposureTags: [] }
     ]);
     expect(result).toEqual([0.5, 0.5]);
   });
 
   it("normalizes explicit weights", () => {
     const result = normalizeWeights([
-      { name: "A", weight: 0.3, sensitivity: "MED", exposureTags: [] },
-      { name: "B", weight: 0.7, sensitivity: "MED", exposureTags: [] }
+      { name: "A", weight: 0.3, sensitivity: "MED", constraint: "FREE", purpose: "LONG_TERM_GROWTH", exposureTags: [] },
+      { name: "B", weight: 0.7, sensitivity: "MED", constraint: "FREE", purpose: "LONG_TERM_GROWTH", exposureTags: [] }
     ]);
     expect(result).toEqual([0.3, 0.7]);
   });
@@ -21,8 +21,8 @@ describe("normalizeWeights", () => {
   it("throws on zero sum", () => {
     expect(() =>
       normalizeWeights([
-        { name: "A", weight: 0, sensitivity: "MED", exposureTags: [] },
-        { name: "B", weight: 0, sensitivity: "MED", exposureTags: [] }
+        { name: "A", weight: 0, sensitivity: "MED", constraint: "FREE", purpose: "LONG_TERM_GROWTH", exposureTags: [] },
+        { name: "B", weight: 0, sensitivity: "MED", constraint: "FREE", purpose: "LONG_TERM_GROWTH", exposureTags: [] }
       ])
     ).toThrow("sum to zero");
   });
@@ -45,7 +45,11 @@ describe("computePortfolioBias", () => {
         statement: "x".repeat(10),
         probability: 0.5,
         horizonMonths: 24,
-        holdings: [{ name: "A", sensitivity: "HIGH", exposureTags: [] }]
+        branchMode: "MODEL_SUGGESTS_USER_OVERRIDES",
+        allowWeightOverride: false,
+        holdings: [
+          { name: "A", sensitivity: "HIGH", constraint: "FREE", purpose: "LONG_TERM_GROWTH", exposureTags: [] }
+        ]
       },
       {
         effectsByLayer: { first: [], second: [], third: [], fourth: [] },

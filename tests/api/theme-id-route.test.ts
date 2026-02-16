@@ -32,6 +32,9 @@ describe("GET /api/themes/[id]", () => {
       holdings: [],
       portfolioMappings: [],
       invalidationItems: [],
+      branches: [],
+      recommendations: [],
+      indicatorDefinitions: [],
       runSnapshots: [
         {
           rawOutputJson: {
@@ -81,6 +84,9 @@ describe("GET /api/themes/[id]", () => {
       holdings: [],
       portfolioMappings: [],
       invalidationItems: [],
+      branches: [],
+      recommendations: [],
+      indicatorDefinitions: [],
       runSnapshots: [{ rawOutputJson: { output_text: "{\"foo\":\"bar\"}" } }]
     });
 

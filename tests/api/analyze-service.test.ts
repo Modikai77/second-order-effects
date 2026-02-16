@@ -10,7 +10,11 @@ const {
   txCreateMany,
   txPortfolioMappingCreateMany,
   txInvalidationCreate,
-  txRunSnapshotCreate
+  txRunSnapshotCreate,
+  txIndicatorDefinitionCreateMany,
+  txThemeBranchCreate,
+  txThemeNodeShockCreateMany,
+  txExpressionRecommendationCreateMany
 } = vi.hoisted(() => ({
   themeCreate: vi.fn(),
   runSnapshotCreate: vi.fn(),
@@ -22,7 +26,15 @@ const {
   txCreateMany: vi.fn(),
   txPortfolioMappingCreateMany: vi.fn(),
   txInvalidationCreate: vi.fn(),
-  txRunSnapshotCreate: vi.fn()
+  txRunSnapshotCreate: vi.fn(),
+  txIndicatorDefinitionCreateMany: vi.fn(),
+  txThemeBranchCreate: vi
+    .fn()
+    .mockResolvedValueOnce({ id: "b1", name: "BASE" })
+    .mockResolvedValueOnce({ id: "b2", name: "BULL" })
+    .mockResolvedValueOnce({ id: "b3", name: "BEAR" }),
+  txThemeNodeShockCreateMany: vi.fn(),
+  txExpressionRecommendationCreateMany: vi.fn()
 }));
 
 vi.mock("@/lib/openai", () => ({
@@ -38,7 +50,11 @@ vi.mock("@/lib/prisma", () => ({
         holding: { create: txHoldingCreate },
         portfolioMapping: { createMany: txPortfolioMappingCreateMany },
         invalidationItem: { create: txInvalidationCreate },
-        runSnapshot: { create: txRunSnapshotCreate }
+        runSnapshot: { create: txRunSnapshotCreate },
+        indicatorDefinition: { createMany: txIndicatorDefinitionCreateMany },
+        themeBranch: { create: txThemeBranchCreate },
+        themeNodeShock: { createMany: txThemeNodeShockCreateMany },
+        expressionRecommendation: { createMany: txExpressionRecommendationCreateMany }
       })
     ),
     theme: { create: themeCreate },
@@ -110,6 +126,10 @@ describe("analyzeAndPersist", () => {
     txThemeCreate.mockResolvedValue({ id: "theme-1" });
     runSnapshotCreate.mockResolvedValue({ id: "snap-1" });
     txRunSnapshotCreate.mockResolvedValue({ id: "snap-1" });
+    txThemeBranchCreate
+      .mockResolvedValueOnce({ id: "b1", name: "BASE" })
+      .mockResolvedValueOnce({ id: "b2", name: "BULL" })
+      .mockResolvedValueOnce({ id: "b3", name: "BEAR" });
   });
 
   it("retries once when first model call fails", async () => {

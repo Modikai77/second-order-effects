@@ -24,6 +24,16 @@ export async function GET(
         }
       },
       invalidationItems: true,
+      branches: {
+        include: {
+          nodeShocks: true
+        },
+        orderBy: { createdAt: "asc" }
+      },
+      recommendations: {
+        orderBy: [{ score: "desc" }]
+      },
+      indicatorDefinitions: true,
       runSnapshots: {
         orderBy: { createdAt: "desc" },
         take: 1
@@ -37,9 +47,33 @@ export async function GET(
 
   const latestSnapshot = theme.runSnapshots[0];
   const assetRecommendations = extractAssetRecommendationsFromSnapshot(latestSnapshot?.rawOutputJson as unknown);
+  const snapshotPayload =
+    latestSnapshot?.rawOutputJson && typeof latestSnapshot.rawOutputJson === "object"
+      ? (latestSnapshot.rawOutputJson as Record<string, unknown>)
+      : {};
 
   return NextResponse.json({
     ...theme,
-    assetRecommendations
+    assetRecommendations,
+    decisionSummary: snapshotPayload.decisionSummary ?? null,
+    portfolioValidation: snapshotPayload.portfolioValidation ?? null,
+    exposureContributions: snapshotPayload.exposureContributions ?? [],
+    branches:
+      theme.branches.length > 0
+        ? theme.branches
+        : (Array.isArray(snapshotPayload.branches) ? snapshotPayload.branches : []),
+    nodeShocks:
+      theme.branches.length > 0
+        ? theme.branches.flatMap((branch) =>
+            branch.nodeShocks.map((nodeShock) => ({
+              ...nodeShock,
+              branchName: branch.name
+            }))
+          )
+        : (Array.isArray(snapshotPayload.nodeShocks) ? snapshotPayload.nodeShocks : []),
+    recommendations:
+      theme.recommendations.length > 0
+        ? theme.recommendations
+        : (Array.isArray(snapshotPayload.recommendations) ? snapshotPayload.recommendations : [])
   });
 }

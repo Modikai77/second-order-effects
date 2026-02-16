@@ -109,8 +109,8 @@ describe("schema post checks", () => {
 
     expect(() =>
       enforceOutputChecks(withRecommendation, [
-        { name: "Infra Fund", sensitivity: "MED", exposureTags: [] },
-        { name: "SaaS Fund", sensitivity: "MED", exposureTags: [] }
+        { name: "Infra Fund", sensitivity: "MED", constraint: "FREE", purpose: "LONG_TERM_GROWTH", exposureTags: [] },
+        { name: "SaaS Fund", sensitivity: "MED", constraint: "FREE", purpose: "LONG_TERM_GROWTH", exposureTags: [] }
       ])
     ).toThrow("SaaS Fund");
   });
@@ -129,7 +129,7 @@ describe("schema post checks", () => {
             ]
           }
         } as never,
-        [{ name: "Infra Fund", sensitivity: "MED", exposureTags: [] }]
+        [{ name: "Infra Fund", sensitivity: "MED", constraint: "FREE", purpose: "LONG_TERM_GROWTH", exposureTags: [] }]
       )
     ).toThrow("at least one asset recommendation");
   });
@@ -168,8 +168,8 @@ describe("schema post checks", () => {
           ]
         } as never,
         [
-        { name: "Infra Fund", sensitivity: "MED", exposureTags: [] },
-        { name: "Infra Fund", sensitivity: "LOW", exposureTags: [] }
+        { name: "Infra Fund", sensitivity: "MED", constraint: "FREE", purpose: "LONG_TERM_GROWTH", exposureTags: [] },
+        { name: "Infra Fund", sensitivity: "LOW", constraint: "FREE", purpose: "LONG_TERM_GROWTH", exposureTags: [] }
       ])
     ).not.toThrow();
   });

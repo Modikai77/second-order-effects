@@ -12,6 +12,14 @@ import {
 } from "@/lib/schemas";
 import { computePortfolioBias } from "@/lib/scoring";
 import { runStructuredAnalysis } from "@/lib/openai";
+import {
+  buildDecisionSummary,
+  buildExpressionRecommendations,
+  buildNodeShocks,
+  deriveIndicatorDefinitions,
+  normalizeBranchProbabilities,
+  validatePortfolioReality
+} from "@/lib/decision-engine";
 
 function layerEntries(output: AnalysisModelOutput) {
   return [
@@ -47,11 +55,103 @@ async function getValidatedOutput(input: AnalyzeInput) {
 }
 
 export async function analyzeAndPersist(rawInput: unknown, userId: string | undefined) {
-  const input = analyzeInputSchema.parse(rawInput);
+  const parsedInput = analyzeInputSchema.parse(rawInput);
+  const input: AnalyzeInput = { ...parsedInput };
 
   try {
+    if (input.portfolioScenarioId) {
+      const loadedScenario = await prisma.portfolioScenario.findUnique({
+        where: { id: input.portfolioScenarioId },
+        include: { holdings: { orderBy: { orderIndex: "asc" } } }
+      });
+      if (!loadedScenario || loadedScenario.userId !== userId) {
+        throw new Error("Portfolio scenario not found.");
+      }
+      input.holdings = loadedScenario.holdings.map((holding) => ({
+        name: holding.name,
+        ticker: holding.ticker ?? undefined,
+        weight: holding.weight ?? undefined,
+        sensitivity: holding.sensitivity,
+        constraint: holding.constraint,
+        purpose: holding.purpose,
+        exposureTags: Array.isArray(holding.exposureTags) ? (holding.exposureTags as string[]) : []
+      }));
+    }
+
+    const portfolioValidation = validatePortfolioReality(input.holdings, input.allowWeightOverride);
+    if (portfolioValidation.errors.length > 0) {
+      throw new Error(portfolioValidation.errors.join(" | "));
+    }
+
     const analysis = await getValidatedOutput(input);
     const bias = computePortfolioBias(input, analysis.output);
+    const branches = normalizeBranchProbabilities(input.branchOverrides);
+    const nodeShocks = analysis.output.nodeShocks?.length
+      ? analysis.output.nodeShocks
+      : buildNodeShocks(analysis.output, branches);
+    const indicatorDefinitions = analysis.output.indicatorDefinitions?.length
+      ? analysis.output.indicatorDefinitions
+      : deriveIndicatorDefinitions(analysis.output);
+
+    let universeRows: Array<{
+      symbol: string;
+      companyName: string;
+      assetType: "EQUITY" | "ETF";
+      region?: string;
+      currency?: string;
+      liquidityClass: string;
+      maxPositionDefaultPct: number;
+      tags: string[];
+      exposureVector: Record<string, number>;
+    }> = [];
+
+    if (input.universeVersionId) {
+      const universeVersion = await prisma.companyUniverseVersion.findUnique({
+        where: { id: input.universeVersionId },
+        include: { companies: true }
+      });
+      if (!universeVersion || universeVersion.userId !== userId) {
+        throw new Error("Selected universe version not found.");
+      }
+      universeRows = universeVersion.companies.map((company) => ({
+        symbol: company.symbol,
+        companyName: company.companyName,
+        assetType: company.assetType,
+        region: company.region ?? undefined,
+        currency: company.currency ?? undefined,
+        liquidityClass: company.liquidityClass,
+        maxPositionDefaultPct: company.maxPositionDefaultPct,
+        tags: Array.isArray(company.tags) ? (company.tags as string[]) : [],
+        exposureVector:
+          company.exposureVector && typeof company.exposureVector === "object"
+            ? (company.exposureVector as Record<string, number>)
+            : {}
+      }));
+    }
+
+    const recommendations = analysis.output.expressionRecommendations?.length
+      ? analysis.output.expressionRecommendations
+      : universeRows.length > 0
+        ? buildExpressionRecommendations(branches, nodeShocks, universeRows, input.holdings, input.horizonMonths)
+        : [];
+
+    const branchImpacts = branches.map((branch) => ({
+      branchName: branch.name,
+      score:
+        bias.portfolioBias *
+        (branch.name === "BULL" ? 0.8 : branch.name === "BEAR" ? 1.2 : 1)
+    }));
+
+    const decisionSummary = analysis.output.decisionSummary
+      ? analysis.output.decisionSummary
+      : buildDecisionSummary(branchImpacts, recommendations, indicatorDefinitions);
+
+    const exposureContributions = [...bias.contributions]
+      .sort((a, b) => a.score - b.score)
+      .map((contribution) => ({
+        ...contribution,
+        direction: contribution.score >= 0 ? "UPSIDE" : "DOWNSIDE"
+      }));
 
     const created = await prisma.$transaction(async (tx) => {
       const theme = await tx.theme.create({
@@ -59,6 +159,7 @@ export async function analyzeAndPersist(rawInput: unknown, userId: string | unde
           statement: input.statement,
           probability: input.probability,
           horizonMonths: input.horizonMonths,
+          portfolioScenarioId: input.portfolioScenarioId,
           userId
         }
       });
@@ -85,6 +186,8 @@ export async function analyzeAndPersist(rawInput: unknown, userId: string | unde
               ticker: holding.ticker,
               weight: holding.weight,
               sensitivity: holding.sensitivity,
+              constraint: holding.constraint,
+              purpose: holding.purpose,
               exposureTags: holding.exposureTags
             }
           })
@@ -134,6 +237,70 @@ export async function analyzeAndPersist(rawInput: unknown, userId: string | unde
         });
       }
 
+      await tx.indicatorDefinition.createMany({
+        data: indicatorDefinitions.map((indicator) => ({
+          themeId: theme.id,
+          indicatorName: indicator.indicatorName,
+          supportsDirection: indicator.supportsDirection,
+          greenThreshold: indicator.greenThreshold,
+          yellowThreshold: indicator.yellowThreshold,
+          redThreshold: indicator.redThreshold,
+          expectedWindow: indicator.expectedWindow
+        }))
+      });
+
+      const createdBranches = await Promise.all(
+        branches.map((branch) =>
+          tx.themeBranch.create({
+            data: {
+              themeId: theme.id,
+              name: branch.name,
+              probability: branch.probability,
+              rationale: branch.rationale
+            }
+          })
+        )
+      );
+
+      const branchIdByName = new Map(createdBranches.map((branch) => [branch.name, branch.id]));
+      await tx.themeNodeShock.createMany({
+        data: nodeShocks.map((nodeShock) => ({
+          branchId: branchIdByName.get(nodeShock.branchName) as string,
+          nodeKey: nodeShock.nodeKey,
+          nodeLabel: nodeShock.nodeLabel,
+          direction: nodeShock.direction,
+          magnitudePct: nodeShock.magnitudePct,
+          strength: nodeShock.strength,
+          lag: nodeShock.lag,
+          confidence: nodeShock.confidence,
+          evidenceNote: nodeShock.evidenceNote
+        }))
+      });
+
+      if (recommendations.length > 0) {
+        await tx.expressionRecommendation.createMany({
+          data: recommendations.map((recommendation) => ({
+            themeId: theme.id,
+            symbol: recommendation.symbol,
+            name: recommendation.name,
+            assetType: recommendation.assetType,
+            direction: recommendation.direction,
+            action: recommendation.action,
+            sizingBand: recommendation.sizingBand,
+            maxPositionPct: recommendation.maxPositionPct,
+            score: recommendation.score,
+            mechanism: recommendation.mechanism,
+            catalystWindow: recommendation.catalystWindow,
+            pricedInNote: recommendation.pricedInNote,
+            riskNote: recommendation.riskNote,
+            invalidationTrigger: recommendation.invalidationTrigger,
+            portfolioRole: recommendation.portfolioRole,
+            actionable: recommendation.actionable,
+            alreadyExpressed: recommendation.alreadyExpressed
+          }))
+        });
+      }
+
       await tx.runSnapshot.create({
         data: {
           themeId: theme.id,
@@ -141,7 +308,13 @@ export async function analyzeAndPersist(rawInput: unknown, userId: string | unde
           promptVersion: analysis.promptVersion,
           rawOutputJson: {
             output: analysis.output,
-            raw: analysis.raw
+            raw: analysis.raw,
+            decisionSummary,
+            branches,
+            nodeShocks,
+            recommendations,
+            exposureContributions,
+            portfolioValidation
           } as Prisma.InputJsonValue,
           computedBiasScore: bias.portfolioBias,
           biasLabel: bias.biasLabel
@@ -155,7 +328,14 @@ export async function analyzeAndPersist(rawInput: unknown, userId: string | unde
       ok: true,
       themeId: created.id,
       bias,
-      analysis: analysis.output
+      analysis: analysis.output,
+      portfolioValidation,
+      branches,
+      nodeShocks,
+      recommendations,
+      indicatorDefinitions,
+      exposureContributions,
+      decisionSummary
     };
   } catch (error) {
     const errMessage = error instanceof Error ? error.message : "Analysis failed";
